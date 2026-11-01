@@ -116,6 +116,7 @@
             </intent-filter>
         </activity>
         <activity android:name=".view.list.ListActivity" />
+        <activity android:name=".view.clones.ClonesActivity" />
         <activity android:name=".view.fake.FakeManagerActivity" />
 
         <activity

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/clone_open"
+        android:title="@string/clone_open" />
+    <item
+        android:id="@+id/clone_rename"
+        android:title="@string/clone_rename" />
+    <item
+        android:id="@+id/clone_reset_name"
+        android:title="@string/clone_reset_name" />
+    <item
+        android:id="@+id/clone_clear"
+        android:title="@string/app_clear" />
+    <item
+        android:id="@+id/clone_delete"
+        android:title="@string/clone_delete" />
+</menu>

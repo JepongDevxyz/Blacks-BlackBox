@@ -184,4 +184,12 @@
     <string name="share_logs_chooser_title">Share debug logs</string>
     <string name="share_logs_preparing">Preparing logs...</string>
     <string name="share_logs_failed">Failed to prepare logs</string>
+    <string name="clones_empty">No clones yet.\nTap + to clone an app.</string>
+    <string name="clones_profiles">Profiles</string>
+    <string name="clone_open">Open clone</string>
+    <string name="clone_rename">Rename clone</string>
+    <string name="clone_name_empty">Name cannot be empty</string>
+    <string name="clone_reset_name">Reset name</string>
+    <string name="clone_delete">Delete clone</string>
+    <string name="clone_delete_hint">Delete %s? Its data inside DevxyzClone will be wiped.</string>
 </resources>

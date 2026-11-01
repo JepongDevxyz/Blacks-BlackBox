@@ -105,12 +105,25 @@ class ClonesActivity : BaseActivity() {
         }
 
         showRecords(registry.loadRecords())
+    }
 
-        // Validate against the engine once its service is up: prune records
-        // whose clone was removed elsewhere (e.g. from the Profiles view).
-        val callback = Runnable { runOnUiThread { validateAndRefresh() } }
-        serviceCallback = callback
-        BlackBoxCore.get().addServiceAvailableCallback(callback)
+    private var validated = false
+
+    override fun onResume() {
+        super.onResume()
+        // Engine validation runs only AFTER the first frame is on screen and
+        // off the main thread. Doing any of this inside onCreate (or inside
+        // the service-available callback, which fires synchronously under
+        // the core's callback lock) can stall the launch before the window
+        // ever draws — the splash-hang fixed here.
+        if (!validated) {
+            validated = true
+            window.decorView.post {
+                val callback = Runnable { validateAndRefresh() }
+                serviceCallback = callback
+                BlackBoxCore.get().addServiceAvailableCallback(callback)
+            }
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -157,15 +170,23 @@ class ClonesActivity : BaseActivity() {
 
     private fun validateAndRefresh() {
         val records = registry.loadRecords()
-        val kept = records.filter { record ->
-            try {
-                BlackBoxCore.get().isInstalled(record.packageName, record.userId)
-            } catch (e: Exception) {
-                true // never prune on uncertainty
-            }
+        if (records.isEmpty()) {
+            showRecords(records)
+            return
         }
-        if (kept.size != records.size) registry.replaceAll(kept)
-        showRecords(kept)
+        lifecycleScope.launch {
+            val kept = withContext(Dispatchers.IO) {
+                records.filter { record ->
+                    try {
+                        BlackBoxCore.get().isInstalled(record.packageName, record.userId)
+                    } catch (e: Exception) {
+                        true // never prune on uncertainty
+                    }
+                }
+            }
+            if (kept.size != records.size) registry.replaceAll(kept)
+            showRecords(kept)
+        }
     }
 
     private fun setBusy(busy: Boolean) {

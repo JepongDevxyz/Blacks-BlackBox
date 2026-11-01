@@ -62,6 +62,6 @@
             android:layout_height="40dp"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="@string/other"
-            android:src="@android:drawable/ic_menu_moreoverflow" />
+            android:src="@drawable/ic_more_vert" />
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

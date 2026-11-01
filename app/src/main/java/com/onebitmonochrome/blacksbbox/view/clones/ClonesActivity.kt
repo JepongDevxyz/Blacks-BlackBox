@@ -71,75 +71,59 @@ class ClonesActivity : BaseActivity() {
         installClone(source, uid)
     }
 
-    private var startupRecords: List<CloneRecord> = emptyList()
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_clones)
         savedInstanceState?.let { pendingUserId = it.getInt(KEY_PENDING_USER, -1) }
 
+        registry = CloneRegistry(this)
+
+        val toolbar = findViewById<Toolbar>(R.id.toolbar)
+        setSupportActionBar(toolbar)
+        toolbar.title = getString(R.string.app_name)
+        toolbar.subtitle = POWERED_BY
+
         emptyView = findViewById(R.id.emptyView)
         progress = findViewById(R.id.progress)
         fab = findViewById(R.id.fab)
-        emptyView.visibility = View.VISIBLE
-        emptyView.text = "STEP 0: layout inflated"
 
-        val steps = listOf<Pair<String, () -> Unit>>(
-            "toolbar" to {
-                val toolbar = findViewById<Toolbar>(R.id.toolbar)
-                setSupportActionBar(toolbar)
-                toolbar.title = getString(R.string.app_name)
-                toolbar.subtitle = POWERED_BY
-            },
-            "registry" to {
-                registry = CloneRegistry(this)
-                startupRecords = registry.loadRecords()
-            },
-            "adapter" to {
-                adapter = ClonesAdapter(
-                    onRowClick = { record -> launchClone(record) },
-                    onRowMenu = { anchor, record -> showCloneMenu(anchor, record) }
-                )
-                val list = findViewById<RecyclerView>(R.id.clonesList)
-                list.layoutManager = LinearLayoutManager(this)
-                list.adapter = adapter
-                showRecords(startupRecords)
-            },
-            "fab" to {
-                fab.setOnClickListener {
-                    pendingUserId = registry.allocateUserId()
-                    val intent = Intent(this, ListActivity::class.java)
-                    intent.putExtra("userID", pendingUserId)
-                    pickerLauncher.launch(intent)
-                }
-            },
-            "callback" to {
+        adapter = ClonesAdapter(
+            onRowClick = { record -> launchClone(record) },
+            onRowMenu = { anchor, record -> showCloneMenu(anchor, record) }
+        )
+        val list = findViewById<RecyclerView>(R.id.clonesList)
+        list.layoutManager = LinearLayoutManager(this)
+        list.adapter = adapter
+
+        fab.setOnClickListener {
+            // Allocate first so ListActivity can badge against this user;
+            // the id stays consumed even if the user backs out (never reused).
+            pendingUserId = registry.allocateUserId()
+            val intent = Intent(this, ListActivity::class.java)
+            intent.putExtra("userID", pendingUserId)
+            pickerLauncher.launch(intent)
+        }
+
+        showRecords(registry.loadRecords())
+    }
+
+    private var validated = false
+
+    override fun onResume() {
+        super.onResume()
+        // Engine validation runs only AFTER the first frame is on screen and
+        // off the main thread. Doing any of this inside onCreate (or inside
+        // the service-available callback, which fires synchronously under
+        // the core's callback lock) can stall the launch before the window
+        // ever draws — the splash-hang fixed here.
+        if (!validated) {
+            validated = true
+            window.decorView.post {
                 val callback = Runnable { validateAndRefresh() }
                 serviceCallback = callback
                 BlackBoxCore.get().addServiceAvailableCallback(callback)
             }
-        )
-        runStartupStep(steps, 0)
-    }
-
-    private fun runStartupStep(steps: List<Pair<String, () -> Unit>>, index: Int) {
-        if (index >= steps.size) {
-            emptyView.text = getString(R.string.clones_empty)
-            emptyView.visibility = if (startupRecords.isEmpty()) View.VISIBLE else View.GONE
-            return
         }
-        val (label, action) = steps[index]
-        emptyView.visibility = View.VISIBLE
-        emptyView.text = "STEP ${index + 1}: $label"
-        window.decorView.postDelayed({
-            try {
-                action()
-                runStartupStep(steps, index + 1)
-            } catch (t: Throwable) {
-                emptyView.text = "FAILED at $label: ${t.javaClass.name}: ${t.message}"
-                emptyView.visibility = View.VISIBLE
-            }
-        }, 400)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -409,5 +393,48 @@ class ClonesActivity : BaseActivity() {
     companion object {
         private const val KEY_PENDING_USER = "pendingUserId"
         private const val POWERED_BY = "Powered by Jepong Devxyz"
+    }
+}
+
+/** RecyclerView adapter for the unified clone list. */
+class ClonesAdapter(
+    private val onRowClick: (CloneRecord) -> Unit,
+    private val onRowMenu: (View, CloneRecord) -> Unit
+) : RecyclerView.Adapter<ClonesAdapter.CloneVH>() {
+
+    private var rows: List<CloneRecord> = emptyList()
+
+    fun submit(records: List<CloneRecord>) {
+        rows = records
+        notifyDataSetChanged()
+    }
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): CloneVH {
+        val view = LayoutInflater.from(parent.context)
+            .inflate(R.layout.item_clone, parent, false)
+        return CloneVH(view)
+    }
+
+    override fun getItemCount(): Int = rows.size
+
+    override fun onBindViewHolder(holder: CloneVH, position: Int) {
+        val record = rows[position]
+        val activity = holder.itemView.context as? ClonesActivity
+        holder.name.text = activity?.displayName(record) ?: record.packageName
+        holder.pkg.text = record.packageName
+        holder.icon.setImageDrawable(activity?.hostIcon(record.packageName))
+        holder.itemView.setOnClickListener { onRowClick(record) }
+        holder.itemView.setOnLongClickListener {
+            onRowMenu(holder.itemView, record)
+            true
+        }
+        holder.overflow.setOnClickListener { onRowMenu(it, record) }
+    }
+
+    class CloneVH(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        val icon: ImageView = itemView.findViewById(R.id.cloneIcon)
+        val name: TextView = itemView.findViewById(R.id.cloneName)
+        val pkg: TextView = itemView.findViewById(R.id.clonePkg)
+        val overflow: ImageButton = itemView.findViewById(R.id.cloneOverflow)
     }
 }

@@ -5,14 +5,15 @@ import com.onebitmonochrome.blacksbbox.R
 import com.onebitmonochrome.blacksbbox.view.base.BaseActivity
 
 /**
- * STRIP diagnostic build: bare-minimum home screen.
- * No registry, no engine calls, no RecyclerView — just prove this activity
- * can open as the home after WelcomeActivity.
+ * LAYOUT-TEST diagnostic build: bare activity, but inflates the FULL
+ * Phase B layout (activity_clones.xml). No registry, no engine calls,
+ * no view wiring. If this hangs, the layout is the culprit; if it opens,
+ * the hang is in the full activity's code.
  */
 class ClonesActivity : BaseActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_clones_strip)
+        setContentView(R.layout.activity_clones)
     }
 }

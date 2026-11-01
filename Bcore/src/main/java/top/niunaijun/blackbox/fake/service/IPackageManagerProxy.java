@@ -357,6 +357,18 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             
             PackageInfo packageInfo = BlackBoxCore.getBPackageManager().getPackageInfo(packageName, flags, BlackBoxCore.getUserId());
             if (packageInfo != null) {
+                // DevxyzClone fix: a virtual app that asks for the HOST package's info is
+                // almost always asking about ITSELF through the proxy identity (its
+                // framework package name is the host's). SDKs such as Facebook Login
+                // compute the app's key hash from these signatures; returning the
+                // host's real signatures makes the SDK present the host's identity
+                // and the login is rejected ("Invalid key hash"). Substitute the
+                // current virtual app's own signatures so the app presents its
+                // genuine signing identity, exactly as on a real device.
+                if (packageName != null && packageName.equals(BlackBoxCore.getHostPkg())
+                        && shouldAttachSigningInfo(flags)) {
+                    replaceSignaturesWithCurrentApp(packageInfo, flags);
+                }
                 
                 if (packageInfo.requestedPermissions != null && packageInfo.requestedPermissionsFlags != null) {
                     for (int i = 0; i < packageInfo.requestedPermissions.length; i++) {
@@ -373,7 +385,15 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             }
             if (AppSystemEnv.isOpenPackage(packageName)) {
                 MethodParameterUtils.replaceUserIdIfNeeded(args, args.length - 1);
-                return method.invoke(who, args);
+                Object result = method.invoke(who, args);
+                // Same self-identity fix for the passthrough path: never let the
+                // host's real signatures reach a virtual app asking about itself.
+                if (result instanceof PackageInfo && packageName != null
+                        && packageName.equals(BlackBoxCore.getHostPkg())
+                        && shouldAttachSigningInfo(flags)) {
+                    replaceSignaturesWithCurrentApp((PackageInfo) result, flags);
+                }
+                return result;
             }
             return null;
         }
@@ -428,6 +448,29 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 if (source.signatures != null && source.signatures.length > 0) {
                     target.signatures = source.signatures;
                 }
+            } catch (Throwable ignored) {
+            }
+        }
+
+        // DevxyzClone fix: replace a PackageInfo's signatures with the current
+        // virtual app's own signatures (see the call site in hook() above).
+        // No-op in the host process itself, where the "current app" IS the host.
+        private void replaceSignaturesWithCurrentApp(PackageInfo target, int flags) {
+            if (target == null) {
+                return;
+            }
+            try {
+                String hostPkg = BlackBoxCore.getHostPkg();
+                String currentPkg = BlackBoxCore.getAppPackageName();
+                if (hostPkg == null || currentPkg == null || hostPkg.equals(currentPkg)) {
+                    return;
+                }
+                PackageInfo own = BlackBoxCore.getBPackageManager()
+                        .getPackageInfo(currentPkg, flags, BlackBoxCore.getUserId());
+                if (own == null) {
+                    return;
+                }
+                attachSigningInfo(target, own);
             } catch (Throwable ignored) {
             }
         }

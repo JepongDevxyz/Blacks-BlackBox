@@ -113,6 +113,75 @@ public class IPackageManagerProxy extends BinderInvocationStub {
         return filtered;
     }
 
+    private static final String PKG_FACEBOOK_KATANA = "com.facebook.katana";
+
+    // DevxyzClone fix (round 2): hide the REAL Facebook app from virtual apps.
+    // Facebook SDKs inside a clone prefer the native Katana flow when the real
+    // Facebook app is visible; that flow validates the CALLING app from OUTSIDE
+    // the container, where the caller is the host's proxy activity, so the key
+    // hash Facebook computes is the host's and login is rejected ("Invalid key
+    // hash" / "Something went wrong"). When Katana is invisible, SDKs fall back
+    // to the web dialog flow, whose identity checks run in-process through the
+    // virtual PackageManager and pass with the cloned app's own signatures.
+    // The cloned Facebook app itself still sees itself (caller == katana), and
+    // the host process is unaffected (caller == host).
+    private static boolean shouldHideFacebookApp(String queriedPackageName) {
+        if (!PKG_FACEBOOK_KATANA.equals(queriedPackageName)) {
+            return false;
+        }
+        return isFacebookAppHiddenFromCurrentApp();
+    }
+
+    private static boolean shouldHideFacebookApp(Intent intent) {
+        if (intent == null) {
+            return false;
+        }
+        try {
+            String targetPackage = intent.getPackage();
+            if (targetPackage == null) {
+                ComponentName cn = intent.getComponent();
+                if (cn != null) {
+                    targetPackage = cn.getPackageName();
+                }
+            }
+            return shouldHideFacebookApp(targetPackage);
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    private static boolean isFacebookAppHiddenFromCurrentApp() {
+        try {
+            String callerPackage = BActivityThread.getAppPackageName();
+            if (callerPackage == null
+                    || PKG_FACEBOOK_KATANA.equals(callerPackage)
+                    || callerPackage.equals(BlackBoxCore.getHostPkg())) {
+                return false;
+            }
+            return true;
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    private static List<ResolveInfo> filterOutFacebookActivities(List<ResolveInfo> resolves) {
+        if (resolves == null || resolves.isEmpty()) {
+            return resolves;
+        }
+        ArrayList<ResolveInfo> filtered = new ArrayList<>(resolves.size());
+        for (ResolveInfo ri : resolves) {
+            if (ri == null) {
+                continue;
+            }
+            ActivityInfo ai = ri.activityInfo;
+            if (ai != null && PKG_FACEBOOK_KATANA.equals(ai.packageName)) {
+                continue;
+            }
+            filtered.add(ri);
+        }
+        return filtered;
+    }
+
     public IPackageManagerProxy() {
         super(BRActivityThread.get().sPackageManager().asBinder());
     }
@@ -172,6 +241,12 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 return null;
             }
 
+            // DevxyzClone fix (round 2): intents aimed at the real Facebook app
+            // must not resolve for clones.
+            if (shouldHideFacebookApp(intent)) {
+                return null;
+            }
+
             String resolvedType = (String) args[1];
             int flags = MethodParameterUtils.toInt(args[2]);
             ResolveInfo resolveInfo = BlackBoxCore.getBPackageManager().resolveIntent(intent, resolvedType, flags, BlackBoxCore.getUserId());
@@ -179,7 +254,17 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 return resolveInfo;
             }
             MethodParameterUtils.replaceUserIdIfNeeded(args, args.length - 1);
-            return method.invoke(who, args);
+            Object hostOut = method.invoke(who, args);
+            // Implicit intents can still land on Katana through the host result;
+            // suppress that too so the SDK takes the web flow.
+            if (hostOut instanceof ResolveInfo && isFacebookAppHiddenFromCurrentApp()) {
+                ResolveInfo hostRi = (ResolveInfo) hostOut;
+                if (hostRi.activityInfo != null
+                        && PKG_FACEBOOK_KATANA.equals(hostRi.activityInfo.packageName)) {
+                    return null;
+                }
+            }
+            return hostOut;
         }
     }
 
@@ -338,6 +423,11 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             // Samsung Health SaSDK should not detect the host Samsung Account package unless the
             // explicit per-app fallback toggle is enabled.
             if (shouldHideHostSamsungAccountForSamsungHealth(packageName)) {
+                return null;
+            }
+
+            // DevxyzClone fix (round 2): the real Facebook app is invisible to clones.
+            if (shouldHideFacebookApp(packageName)) {
                 return null;
             }
             
@@ -605,6 +695,11 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 return null;
             }
 
+            // DevxyzClone fix (round 2): the real Facebook app is invisible to clones.
+            if (shouldHideFacebookApp(packageName)) {
+                return null;
+            }
+
 
 
             ApplicationInfo applicationInfo = BlackBoxCore.getBPackageManager().getApplicationInfo(packageName, flags, BlackBoxCore.getUserId());
@@ -646,6 +741,10 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 if (shouldHideHostSamsungAccountForSamsungHealthCaller()) {
                     resolves = filterOutSamsungAccountActivities(resolves);
                 }
+                // DevxyzClone fix (round 2): strip the real Facebook app from results.
+                if (isFacebookAppHiddenFromCurrentApp()) {
+                    resolves = filterOutFacebookActivities(resolves);
+                }
                 if (BuildCompat.isN()) {
                     return ParceledListSliceCompat.create(resolves);
                 }
@@ -655,7 +754,8 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             MethodParameterUtils.replaceUserIdIfNeeded(args, args.length - 1);
             Object hostOut = method.invoke(who, args);
 
-            if (!shouldHideHostSamsungAccountForSamsungHealthCaller()) {
+            boolean hideFacebook = isFacebookAppHiddenFromCurrentApp();
+            if (!shouldHideHostSamsungAccountForSamsungHealthCaller() && !hideFacebook) {
                 return hostOut;
             }
 
@@ -669,7 +769,12 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 }
             }
 
-            hostList = filterOutSamsungAccountActivities(hostList);
+            if (shouldHideHostSamsungAccountForSamsungHealthCaller()) {
+                hostList = filterOutSamsungAccountActivities(hostList);
+            }
+            if (hideFacebook) {
+                hostList = filterOutFacebookActivities(hostList);
+            }
             if (hostList == null) {
                 return hostOut;
             }

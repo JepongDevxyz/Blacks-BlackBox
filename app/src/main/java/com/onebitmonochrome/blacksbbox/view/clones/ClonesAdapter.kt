@@ -33,10 +33,9 @@ class ClonesAdapter(
 
     override fun onBindViewHolder(holder: CloneVH, position: Int) {
         val record = rows[position]
-        val activity = holder.itemView.context as? ClonesActivity
-        holder.name.text = activity?.displayName(record) ?: record.packageName
+        holder.name.text = record.customName ?: (record.packageName + " " + record.number)
         holder.pkg.text = record.packageName
-        holder.icon.setImageDrawable(activity?.hostIcon(record.packageName))
+        holder.icon.setImageResource(android.R.drawable.sym_def_app_icon)
         holder.itemView.setOnClickListener { onRowClick(record) }
         holder.itemView.setOnLongClickListener {
             onRowMenu(holder.itemView, record)

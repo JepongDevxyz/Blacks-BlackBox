@@ -1,0 +1,39 @@
+plugins {
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.jetbrains.kotlin.android)
+}
+
+// Vendored from Nukc/StateView v2.2.0 (MIT, see LICENSE in this folder).
+// The JitPack artifact com.github.nukc.stateview:kotlin:2.2.0 no longer
+// resolves (JitPack's build for that tag produced no modules), which broke
+// CI run #3 at :app:dataBindingMergeDependencyArtifactsDebug. The module is
+// tiny (3 Kotlin files + resources), so it is built from source here.
+android {
+    namespace 'com.github.nukc.stateview'
+    compileSdk rootProject.ext.compileSdkVersion
+
+    defaultConfig {
+        minSdk 21
+        consumerProguardFiles 'consumer-rules.pro'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+    kotlinOptions {
+        jvmTarget = '21'
+    }
+}
+
+dependencies {
+    implementation libs.appcompat
+    implementation libs.constraintlayout
+    implementation libs.core.ktx
+}

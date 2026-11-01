@@ -27,3 +27,4 @@ include ':blackbox-gallery-stub'
 include(":black-reflection")
 include(":compiler")
 include ':Bcore'
+include ':stateview'

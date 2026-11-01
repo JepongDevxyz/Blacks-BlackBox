@@ -6,7 +6,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.ViewModelProvider
 import top.niunaijun.blackbox.BlackBoxCore
 import com.onebitmonochrome.blacksbbox.util.InjectionUtil
-import com.onebitmonochrome.blacksbbox.view.clones.ClonesActivity
 import com.onebitmonochrome.blacksbbox.view.list.ListViewModel
 
 class WelcomeActivity : AppCompatActivity() {
@@ -23,9 +22,8 @@ class WelcomeActivity : AppCompatActivity() {
     }
 
     private fun jump() {
-        // Phase B: the unified Clones screen is the home now.
-        // MainActivity (per-profile pager) stays reachable from its menu.
-        startActivity(Intent(this, ClonesActivity::class.java))
+        // BISECT TEST: upstream home (MainActivity) to isolate the splash hang.
+        MainActivity.start(this)
         finish()
     }
 

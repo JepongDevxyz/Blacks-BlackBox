@@ -28,6 +28,7 @@ class StateView : View {
 
     @IntDef(EMPTY, RETRY, LOADING)
     @kotlin.annotation.Retention(AnnotationRetention.SOURCE)
+    @kotlin.annotation.Target(AnnotationTarget.TYPE, AnnotationTarget.VALUE_PARAMETER)
     annotation class ViewType
 
     var emptyResource = 0
@@ -95,10 +96,12 @@ class StateView : View {
     }
 
     @SuppressLint("MissingSuperCall")
-    override fun draw(canvas: Canvas?) {
+    // Canvas is @NonNull in the modern SDK (was nullable in the 2020 source);
+    // a Canvas? parameter no longer overrides anything.
+    override fun draw(canvas: Canvas) {
     }
 
-    override fun dispatchDraw(canvas: Canvas?) {}
+    override fun dispatchDraw(canvas: Canvas) {}
 
     override fun setVisibility(visibility: Int) {
         setVisibility(emptyView, visibility)

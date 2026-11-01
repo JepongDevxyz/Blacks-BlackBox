@@ -182,6 +182,110 @@ public class IPackageManagerProxy extends BinderInvocationStub {
         return filtered;
     }
 
+    // ===== DevxyzClone diagnostics (round 3, temporary) =====
+    // Appends one line per relevant PackageManager event inside cloned apps to
+    // Download/devxyzclone-pmdiag.log (and the app's external files dir) so the
+    // exact identity answers given to SDKs can be inspected after a phone test.
+    private static final Object DIAG_LOCK = new Object();
+
+    private static void diagLog(String msg) {
+        try {
+            String line = System.currentTimeMillis() + " [" + android.os.Process.myPid() + "] " + msg + "\n";
+            synchronized (DIAG_LOCK) {
+                java.io.File[] targets = new java.io.File[2];
+                try {
+                    targets[0] = new java.io.File(
+                            android.os.Environment.getExternalStoragePublicDirectory(
+                                    android.os.Environment.DIRECTORY_DOWNLOADS),
+                            "devxyzclone-pmdiag.log");
+                } catch (Throwable ignored) {
+                }
+                try {
+                    android.content.Context ctx = BlackBoxCore.getContext();
+                    if (ctx != null) {
+                        java.io.File ext = ctx.getExternalFilesDir(null);
+                        if (ext != null) {
+                            targets[1] = new java.io.File(ext, "devxyzclone-pmdiag.log");
+                        }
+                    }
+                } catch (Throwable ignored) {
+                }
+                for (java.io.File f : targets) {
+                    if (f == null) {
+                        continue;
+                    }
+                    try {
+                        java.io.FileWriter w = new java.io.FileWriter(f, true);
+                        w.write(line);
+                        w.close();
+                    } catch (Throwable ignored) {
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static String diagKeyHash(android.content.pm.Signature[] sigs) {
+        if (sigs == null || sigs.length == 0) {
+            return "none";
+        }
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-1");
+            byte[] digest = md.digest(sigs[0].toByteArray());
+            return android.util.Base64.encodeToString(digest, android.util.Base64.NO_WRAP);
+        } catch (Throwable t) {
+            return "err";
+        }
+    }
+
+    private static String diagSigningInfoHash(android.content.pm.SigningInfo si) {
+        if (si == null) {
+            return "none";
+        }
+        try {
+            return diagKeyHash(si.getApkContentsSigners());
+        } catch (Throwable t) {
+            return "err";
+        }
+    }
+
+    private static boolean diagIsFacebookIntent(Intent intent) {
+        if (intent == null) {
+            return false;
+        }
+        try {
+            StringBuilder sb = new StringBuilder();
+            if (intent.getPackage() != null) {
+                sb.append(intent.getPackage()).append(' ');
+            }
+            if (intent.getComponent() != null) {
+                sb.append(intent.getComponent().flattenToShortString()).append(' ');
+            }
+            if (intent.getAction() != null) {
+                sb.append(intent.getAction()).append(' ');
+            }
+            if (intent.getDataString() != null) {
+                sb.append(intent.getDataString());
+            }
+            String s = sb.toString().toLowerCase();
+            return s.contains("facebook") || s.contains("katana") || s.contains("customtab");
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    private static String diagIntentSummary(Intent intent) {
+        try {
+            return "pkg=" + intent.getPackage()
+                    + " cmp=" + (intent.getComponent() != null ? intent.getComponent().flattenToShortString() : null)
+                    + " act=" + intent.getAction()
+                    + " data=" + intent.getDataString();
+        } catch (Throwable t) {
+            return "err";
+        }
+    }
+
     public IPackageManagerProxy() {
         super(BRActivityThread.get().sPackageManager().asBinder());
     }
@@ -244,6 +348,8 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             // DevxyzClone fix (round 2): intents aimed at the real Facebook app
             // must not resolve for clones.
             if (shouldHideFacebookApp(intent)) {
+                diagLog("resolveIntent caller=" + BlackBoxCore.getAppPackageName()
+                        + " " + diagIntentSummary(intent) + " -> null (katana hidden)");
                 return null;
             }
 
@@ -251,6 +357,11 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             int flags = MethodParameterUtils.toInt(args[2]);
             ResolveInfo resolveInfo = BlackBoxCore.getBPackageManager().resolveIntent(intent, resolvedType, flags, BlackBoxCore.getUserId());
             if (resolveInfo != null) {
+                if (diagIsFacebookIntent(intent)) {
+                    diagLog("resolveIntent caller=" + BlackBoxCore.getAppPackageName()
+                            + " " + diagIntentSummary(intent) + " -> virtual "
+                            + (resolveInfo.activityInfo != null ? resolveInfo.activityInfo.packageName : null));
+                }
                 return resolveInfo;
             }
             MethodParameterUtils.replaceUserIdIfNeeded(args, args.length - 1);
@@ -261,8 +372,16 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 ResolveInfo hostRi = (ResolveInfo) hostOut;
                 if (hostRi.activityInfo != null
                         && PKG_FACEBOOK_KATANA.equals(hostRi.activityInfo.packageName)) {
+                    diagLog("resolveIntent caller=" + BlackBoxCore.getAppPackageName()
+                            + " " + diagIntentSummary(intent) + " -> null (katana host result suppressed)");
                     return null;
                 }
+            }
+            if (diagIsFacebookIntent(intent)) {
+                diagLog("resolveIntent caller=" + BlackBoxCore.getAppPackageName()
+                        + " " + diagIntentSummary(intent) + " -> "
+                        + (hostOut instanceof ResolveInfo && ((ResolveInfo) hostOut).activityInfo != null
+                            ? ((ResolveInfo) hostOut).activityInfo.packageName : String.valueOf(hostOut)));
             }
             return hostOut;
         }
@@ -471,6 +590,13 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                         }
                     }
                 }
+                if (shouldAttachSigningInfo(flags) || packageName.equals(BlackBoxCore.getHostPkg())
+                        || PKG_FACEBOOK_KATANA.equals(packageName)) {
+                    diagLog("getPackageInfo caller=" + BlackBoxCore.getAppPackageName()
+                            + " q=" + packageName + " flags=" + Integer.toHexString(flags)
+                            + " src=virtual sigHash=" + diagKeyHash(packageInfo.signatures)
+                            + " signingInfoHash=" + diagSigningInfoHash(packageInfo.signingInfo));
+                }
                 return packageInfo;
             }
             if (AppSystemEnv.isOpenPackage(packageName)) {
@@ -483,7 +609,21 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                         && shouldAttachSigningInfo(flags)) {
                     replaceSignaturesWithCurrentApp((PackageInfo) result, flags);
                 }
+                if (result instanceof PackageInfo && (shouldAttachSigningInfo(flags)
+                        || packageName.equals(BlackBoxCore.getHostPkg())
+                        || PKG_FACEBOOK_KATANA.equals(packageName))) {
+                    PackageInfo rpi = (PackageInfo) result;
+                    diagLog("getPackageInfo caller=" + BlackBoxCore.getAppPackageName()
+                            + " q=" + packageName + " flags=" + Integer.toHexString(flags)
+                            + " src=passthrough sigHash=" + diagKeyHash(rpi.signatures)
+                            + " signingInfoHash=" + diagSigningInfoHash(rpi.signingInfo));
+                }
                 return result;
+            }
+            if (PKG_FACEBOOK_KATANA.equals(packageName) || packageName.equals(BlackBoxCore.getHostPkg())) {
+                diagLog("getPackageInfo caller=" + BlackBoxCore.getAppPackageName()
+                        + " q=" + packageName + " flags=" + Integer.toHexString(flags)
+                        + " result=null");
             }
             return null;
         }
@@ -700,6 +840,12 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 return null;
             }
 
+            if (PKG_FACEBOOK_KATANA.equals(packageName) || packageName.equals(BlackBoxCore.getHostPkg())
+                    || packageName.equals(BlackBoxCore.getAppPackageName())) {
+                diagLog("getApplicationInfo caller=" + BlackBoxCore.getAppPackageName()
+                        + " q=" + packageName + " flags=" + Integer.toHexString(flags));
+            }
+
 
 
             ApplicationInfo applicationInfo = BlackBoxCore.getBPackageManager().getApplicationInfo(packageName, flags, BlackBoxCore.getUserId());
@@ -745,6 +891,16 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 if (isFacebookAppHiddenFromCurrentApp()) {
                     resolves = filterOutFacebookActivities(resolves);
                 }
+                if (diagIsFacebookIntent(intent)) {
+                    StringBuilder pkgs = new StringBuilder();
+                    for (ResolveInfo ri : resolves) {
+                        if (ri != null && ri.activityInfo != null) {
+                            pkgs.append(ri.activityInfo.packageName).append(',');
+                        }
+                    }
+                    diagLog("queryIntentActivities caller=" + BlackBoxCore.getAppPackageName()
+                            + " " + diagIntentSummary(intent) + " -> virtual [" + pkgs + "]");
+                }
                 if (BuildCompat.isN()) {
                     return ParceledListSliceCompat.create(resolves);
                 }
@@ -774,6 +930,18 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             }
             if (hideFacebook) {
                 hostList = filterOutFacebookActivities(hostList);
+            }
+            if (diagIsFacebookIntent(intent)) {
+                StringBuilder pkgs = new StringBuilder();
+                if (hostList != null) {
+                    for (ResolveInfo ri : hostList) {
+                        if (ri != null && ri.activityInfo != null) {
+                            pkgs.append(ri.activityInfo.packageName).append(',');
+                        }
+                    }
+                }
+                diagLog("queryIntentActivities caller=" + BlackBoxCore.getAppPackageName()
+                        + " " + diagIntentSummary(intent) + " -> host [" + pkgs + "]");
             }
             if (hostList == null) {
                 return hostOut;

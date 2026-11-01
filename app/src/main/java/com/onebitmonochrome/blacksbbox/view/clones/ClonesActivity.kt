@@ -73,7 +73,9 @@ class ClonesActivity : BaseActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        Toast.makeText(applicationContext, "TRACE-2 Clones onCreate", Toast.LENGTH_LONG).show()
         setContentView(R.layout.activity_clones)
+        Toast.makeText(applicationContext, "TRACE-3 content set", Toast.LENGTH_LONG).show()
         savedInstanceState?.let { pendingUserId = it.getInt(KEY_PENDING_USER, -1) }
 
         registry = CloneRegistry(this)
@@ -105,12 +107,14 @@ class ClonesActivity : BaseActivity() {
         }
 
         showRecords(registry.loadRecords())
+        Toast.makeText(applicationContext, "TRACE-4 records shown", Toast.LENGTH_LONG).show()
     }
 
     private var validated = false
 
     override fun onResume() {
         super.onResume()
+        Toast.makeText(applicationContext, "TRACE-5 Clones onResume", Toast.LENGTH_LONG).show()
         // Engine validation runs only AFTER the first frame is on screen and
         // off the main thread. Doing any of this inside onCreate (or inside
         // the service-available callback, which fires synchronously under

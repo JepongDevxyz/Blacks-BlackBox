@@ -1,6 +1,7 @@
 package com.onebitmonochrome.blacksbbox.view.main
 
 import android.content.Intent
+import android.widget.Toast
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.ViewModelProvider
@@ -23,8 +24,7 @@ class WelcomeActivity : AppCompatActivity() {
     }
 
     private fun jump() {
-        // Phase B: the unified Clones screen is the home now.
-        // MainActivity (per-profile pager) stays reachable from its menu.
+        Toast.makeText(applicationContext, "TRACE-1 jump to Clones", Toast.LENGTH_LONG).show()
         startActivity(Intent(this, ClonesActivity::class.java))
         finish()
     }

@@ -53,7 +53,7 @@ jobs:
       - name: Fetch CI-built DevxyzClone APK
     env:
               GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-                      run: |
+                    run: |
                                 for i in $(seq 1 40); do ID=$(gh api "repos/${{ github.repository }}/actions/workflows/android.yml/runs?head_sha=${{ github.sha }}&per_page=5" --jq '[.workflow_runs[]|select(.conclusion=="success")][0].id // empty'); if [ -n "ID" ]; then gh run download "ID" --name DevxyzClone-engine-debug --dir "$RUNNER_TEMP/cloneapk" && break; fi; echo "waiting for CI build... $i"; sleep 45; done; ls -la "$RUNNER_TEMP/cloneapk"
       - name: Download target APK
         run: |

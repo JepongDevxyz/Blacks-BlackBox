@@ -22,7 +22,7 @@ on:
 
 permissions:
   contents: read
-    actions: read
+  actions: read
 
 jobs:
   stress:

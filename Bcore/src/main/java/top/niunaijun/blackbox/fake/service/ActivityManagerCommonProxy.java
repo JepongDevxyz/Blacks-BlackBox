@@ -73,6 +73,51 @@ public class ActivityManagerCommonProxy {
         return false;
     }
 
+    // DevxyzClone fix (round 6): Facebook/Meta OAuth launches from a clone
+    // must stay inside the container. If the ACTION_VIEW escapes to the real
+    // browser, the OAuth redirect back (fb<appid>://..., custom schemes, app
+    // links handled only by virtual activities) can never reach the clone,
+    // so the login can never complete - this is the visible difference from
+    // Dual Space, where the web form opens inside the cloned app.
+    private static boolean isOAuthWebEscape(Intent intent) {
+        if (intent == null) {
+            return false;
+        }
+        try {
+            if (!Intent.ACTION_VIEW.equals(intent.getAction())) {
+                return false;
+            }
+            String callerPackage = BActivityThread.getAppPackageName();
+            if (callerPackage == null || callerPackage.equals(BlackBoxCore.getHostPkg())) {
+                return false;
+            }
+            String data = intent.getDataString();
+            if (data == null) {
+                return false;
+            }
+            android.net.Uri uri = android.net.Uri.parse(data);
+            String scheme = uri.getScheme();
+            if (!"http".equals(scheme) && !"https".equals(scheme)) {
+                return false;
+            }
+            String host = uri.getHost();
+            if (host == null) {
+                return false;
+            }
+            host = host.toLowerCase();
+            if (host.endsWith("facebook.com")) {
+                String path = uri.getPath() != null ? uri.getPath().toLowerCase() : "";
+                return path.contains("oauth") || path.contains("dialog") || path.contains("login");
+            }
+            if (host.equals("auth.meta.com") || host.endsWith(".meta.com")
+                    || host.equals("meta.com") || host.endsWith("oculus.com")) {
+                return true;
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
     private static void fbDiagLog(String msg) {
         // Round 5: shared DiagLog sink (see IPackageManagerProxy).
         DiagLog.log(msg);
@@ -227,6 +272,30 @@ public class ActivityManagerCommonProxy {
                 }
                 if (resolveInfo == null) {
                     intent.setPackage(origPackage);
+
+                    // DevxyzClone fix (round 6): rewrite Facebook/Meta OAuth
+                    // launches to the host's in-container OAuthWebActivity,
+                    // preserving the for-result linkage (see isOAuthWebEscape).
+                    if (isOAuthWebEscape(intent)) {
+                        try {
+                            int rc = StartActivityCompat.getRequestCode(args);
+                            Intent rewritten = new Intent(intent);
+                            rewritten.setComponent(new ComponentName(
+                                    BlackBoxCore.getHostPkg(),
+                                    "com.onebitmonochrome.blacksbbox.view.clones.OAuthWebActivity"));
+                            rewritten.setPackage(null);
+                            rewritten.putExtra("oauth_url", intent.getDataString());
+                            rewritten.putExtra("oauth_user_id", BActivityThread.getUserId());
+                            rewritten.putExtra("oauth_for_result", rc >= 0);
+                            replaceIntentArg(args, intent, rewritten);
+                            fbDiagLog("startActivity OAuth REWRITTEN to in-container WebView caller="
+                                    + BActivityThread.getAppPackageName()
+                                    + " forResult=" + (rc >= 0)
+                                    + " url=" + intent.getDataString());
+                            return method.invoke(who, args);
+                        } catch (Throwable ignored) {
+                        }
+                    }
 
                     // DevxyzClone fix (round 4): block the fallthrough launch of
                     // the real Facebook app (see shouldBlockFacebookNativeLaunch).

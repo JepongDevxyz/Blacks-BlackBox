@@ -118,6 +118,7 @@
         <activity android:name=".view.list.ListActivity" />
         <activity android:name=".view.clones.ClonesActivity" />
         <activity android:name=".view.clones.DiagLogActivity" />
+        <activity android:name=".view.clones.OAuthWebActivity" android:exported="false" />
         <activity android:name=".view.fake.FakeManagerActivity" />
 
         <activity

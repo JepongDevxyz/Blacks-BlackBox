@@ -61,11 +61,50 @@ def shot(name):
         log("shot %s failed: %s" % (name, e))
 
 
-def dump(name=None):
-    """Return list of node dicts from uiautomator."""
+def anr_present():
     try:
-        adb("shell", "uiautomator", "dump", "/sdcard/dump.xml", timeout=30)
-        raw = adb("shell", "cat", "/sdcard/dump.xml", timeout=30)
+        w = adb("shell", "dumpsys", "window", "windows", timeout=30)
+        return ("Not Responding" in w) or ("isn't responding" in w) \
+            or ("AppNotResponding" in w)
+    except Exception:
+        return False
+
+
+def dismiss_anr():
+    """Tap the ANR dialog's 'Wait' row (full-width, ~57% down the screen)."""
+    try:
+        size = adb("shell", "wm", "size", timeout=20)
+        m = re.search(r"(\d+)x(\d+)", size)
+        w, h = (int(m.group(1)), int(m.group(2))) if m else (1080, 2400)
+        adb("shell", "input", "tap", str(w // 2), str(int(h * 0.57)),
+            timeout=20)
+        log("ANR dialog: tapped Wait at %d,%d" % (w // 2, int(h * 0.57)))
+        time.sleep(4)
+    except Exception as e:
+        log("dismiss_anr failed: %s" % e)
+
+
+def dump(name=None):
+    """Return list of node dicts from uiautomator (ANR-recovering)."""
+    for attempt in range(4):
+        try:
+            out = adb("shell", "uiautomator", "dump", "--compressed",
+                      "/sdcard/dump.xml", timeout=45)
+            raw = adb("shell", "cat", "/sdcard/dump.xml", timeout=30)
+            if raw.strip().startswith("<"):
+                break
+            log("dump attempt %d not XML: %r / %r"
+                % (attempt, out.strip()[:120], raw.strip()[:120]))
+            if anr_present():
+                dismiss_anr()
+            else:
+                time.sleep(5)
+        except Exception as e:
+            log("dump attempt %d failed: %s" % (attempt, e))
+            if anr_present():
+                dismiss_anr()
+            time.sleep(3)
+    try:
         if name:
             with open(os.path.join(OUT, name + ".xml"), "w") as f:
                 f.write(raw)
@@ -178,9 +217,18 @@ def main():
                    "--brief", "-c", "android.intent.category.LAUNCHER",
                    HOST_PKG, timeout=30)
     log("launcher: " + launcher.strip().replace("\n", " "))
-    adb("shell", "monkey", "-p", HOST_PKG, "-c",
-        "android.intent.category.LAUNCHER", "1", timeout=60)
-    time.sleep(6)
+    adb("shell", "am", "start", "-n",
+        HOST_PKG + "/com.onebitmonochrome.blacksbbox.view.main.WelcomeActivity",
+        timeout=60)
+    # The engine's first init is heavy; let the system settle and clear
+    # any 'System UI isn't responding' dialog before interacting.
+    time.sleep(45)
+    for _ in range(5):
+        if anr_present():
+            dismiss_anr()
+        else:
+            break
+    shot("launched")
     nodes = dump("home")
     shot("home")
     log("home texts: " + texts(nodes)[:300])
@@ -206,7 +254,7 @@ def main():
     tap_node(row)
 
     # Clone installs; wait for the clone row on the home list.
-    nodes = wait_text(TARGET_LABEL, timeout=240)
+    nodes = wait_text(TARGET_LABEL, timeout=360)
     shot("after_clone")
     log("after clone texts: " + texts(nodes)[:300])
     row = find(nodes, TARGET_LABEL)

@@ -84,9 +84,41 @@ def dismiss_anr():
         log("dismiss_anr failed: %s" % e)
 
 
+def foreground_activity():
+    try:
+        out = adb("shell", "dumpsys", "activity", "activities", timeout=30)
+        m = re.search(r"topResumedActivity=\S+\s+\S+\s+(\S+)", out)
+        if m:
+            return m.group(1)
+        m = re.search(r"mResumedActivity.*?(\S+/\S+)", out)
+        return m.group(1) if m else ""
+    except Exception:
+        return ""
+
+
+def wait_calm(max_s=420, want_pkg=None):
+    """Wait (cheap dumpsys polls only) until no ANR dialog is up and,
+    optionally, the wanted package is in the foreground. Failed
+    uiautomator calls add load to a wedged system, so they must not
+    be attempted until the system is calm.
+    """
+    end = time.time() + max_s
+    while time.time() < end:
+        if anr_present():
+            dismiss_anr()
+            time.sleep(10)
+            continue
+        if want_pkg is None or want_pkg in foreground_activity():
+            return True
+        time.sleep(10)
+    return False
+
+
 def dump(name=None):
-    """Return list of node dicts from uiautomator (ANR-recovering)."""
-    for attempt in range(4):
+    """Return list of node dicts from uiautomator. Callers gate this
+    behind wait_calm(); only two attempts are made here."""
+    raw = ""
+    for attempt in range(2):
         try:
             out = adb("shell", "uiautomator", "dump", "--compressed",
                       "/sdcard/dump.xml", timeout=45)
@@ -246,13 +278,17 @@ def main():
         shot("install_fail")
         finalize("TARGET_INSTALL_FAILED (see report)")
 
+    # Pre-grant what can be granted so first-run system dialogs (in
+    # particular the device-logs access prompt) never block the drive.
+    for perm in ("android.permission.READ_LOGS",
+                 "android.permission.POST_NOTIFICATIONS"):
+        try:
+            adb("shell", "pm", "grant", HOST_PKG, perm, timeout=30)
+        except Exception:
+            pass
+
     # Let dexopt/background work drain before touching the UI.
-    time.sleep(60)
-    for _ in range(5):
-        if anr_present():
-            dismiss_anr()
-        else:
-            break
+    time.sleep(30)
 
     # Launch DevxyzClone's launcher activity.
     launcher = adb("shell", "cmd", "package", "resolve-activity",
@@ -262,15 +298,12 @@ def main():
     adb("shell", "am", "start", "-n",
         HOST_PKG + "/com.onebitmonochrome.blacksbbox.view.main.WelcomeActivity",
         timeout=60)
-    # The engine's first init is heavy; let the system settle and clear
-    # any 'System UI isn't responding' dialog before interacting.
-    time.sleep(45)
-    for _ in range(5):
-        if anr_present():
-            dismiss_anr()
-        else:
-            break
+    # The engine's first init is heavy and SystemUI ANRs easily under
+    # this load; wait with cheap polls only until the host is in the
+    # foreground and no ANR dialog is up.
     shot("launched")
+    wait_calm(480, HOST_PKG)
+    log("foreground after launch: " + foreground_activity())
     nodes = dump("home")
     if handle_system_dialogs(nodes):
         time.sleep(3)
@@ -308,6 +341,7 @@ def main():
 
     # Launch the clone.
     tap_node(row)
+    wait_calm(300, HOST_PKG)
     time.sleep(8)
     # Dismiss system permission dialogs / hints while the clone boots.
     for _ in range(10):

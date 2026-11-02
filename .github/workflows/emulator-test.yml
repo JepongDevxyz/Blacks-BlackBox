@@ -1,0 +1,78 @@
+name: Emulator Stress Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      muse_apk_url:
+        description: "URL of the Muse APK to test"
+        required: true
+        type: string
+      target:
+        description: "Which app to drive"
+        required: true
+        default: "muse"
+        type: choice
+        options:
+          - muse
+      login_email:
+        description: "Email used for the in-clone sign-in"
+        required: true
+        default: "jepongspideymuse@gmail.com"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  stress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install Android SDK packages
+        run: |
+          SDKMANAGER=$(ls $ANDROID_HOME/cmdline-tools/*/bin/sdkmanager | sort -V | tail -1)
+          yes | $SDKMANAGER --licenses > /dev/null || true
+          $SDKMANAGER "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;29.0.13846066"
+      - name: Build DevxyzClone debug APK
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+      - name: Download target APK
+        run: |
+          mkdir -p "$RUNNER_TEMP/testapks"
+          curl -L --fail -o "$RUNNER_TEMP/testapks/target.apk" "${{ inputs.muse_apk_url }}"
+          ls -la "$RUNNER_TEMP/testapks"
+          CLONE_APK=$(ls app/build/outputs/apk/debug/*universal*.apk | head -1)
+          echo "CLONE_APK=$CLONE_APK" >> "$GITHUB_ENV"
+          echo "TARGET_APK=$RUNNER_TEMP/testapks/target.apk" >> "$GITHUB_ENV"
+      - name: Emulator stress drive
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TEST_TARGET: ${{ inputs.target }}
+          LOGIN_EMAIL: ${{ inputs.login_email }}
+          OUT_DIR: emu-out
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 4096M
+          disk-size: 8000M
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          disable-animations: true
+          script: python3 emu/emu_drive.py
+      - name: Upload bench artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emu-bench-out
+          path: emu-out
+          if-no-files-found: warn

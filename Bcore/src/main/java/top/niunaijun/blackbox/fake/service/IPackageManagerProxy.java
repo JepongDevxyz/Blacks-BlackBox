@@ -188,6 +188,37 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 || authority.startsWith(PKG_FACEBOOK_WAKIZASHI));
     }
 
+    // DevxyzClone fix (round 7): is this intent a PackageManager probe for a
+    // Facebook Login redirect URI (fb<appid>://authorize or
+    // fbconnect://cct.<package>)? The SDK's
+    // Validate.hasCustomTabRedirectActivity runs exactly this query to
+    // decide whether its Custom Tab handler may run.
+    private static boolean isFacebookRedirectQuery(Intent intent) {
+        if (intent == null || !isFacebookAppHiddenFromCurrentApp()) {
+            return false;
+        }
+        try {
+            android.net.Uri data = intent.getData();
+            if (data == null) {
+                return false;
+            }
+            String scheme = data.getScheme();
+            if (scheme == null) {
+                return false;
+            }
+            if (scheme.length() > 2 && scheme.charAt(0) == 'f'
+                    && scheme.charAt(1) == 'b' && Character.isDigit(scheme.charAt(2))) {
+                return true;
+            }
+            if ("fbconnect".equals(scheme)) {
+                String host = data.getHost();
+                return host != null && host.startsWith("cct.");
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
     private static boolean isCustomTabsServiceIntent(Intent intent) {
         return intent != null && ACTION_CUSTOM_TABS_SERVICE.equals(intent.getAction());
     }
@@ -382,6 +413,14 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             if (shouldHideFacebookApp(intent)) {
                 diagLog("resolveIntent caller=" + BlackBoxCore.getAppPackageName()
                         + " " + diagIntentSummary(intent) + " -> null (katana hidden)");
+                return null;
+            }
+
+            // Round 7: same redirect-URI hiding as QueryIntentActivities.
+            if (isFacebookRedirectQuery(intent)) {
+                diagLog("resolveIntent caller=" + BlackBoxCore.getAppPackageName()
+                        + " " + diagIntentSummary(intent)
+                        + " -> null (FB redirect URI hidden: forces WebView login)");
                 return null;
             }
 
@@ -1045,6 +1084,24 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             Intent intent = MethodParameterUtils.getFirstParam(args, Intent.class);
             String type = MethodParameterUtils.getFirstParam(args, String.class);
             Integer flags = MethodParameterUtils.getFirstParam(args, Integer.class);
+
+            // DevxyzClone fix (round 7): the Facebook SDK enables its
+            // Custom Tab handler only when PackageManager resolves the
+            // app's own CustomTabActivity - alone - for
+            // fb<appid>://authorize or fbconnect://cct.<package>. Inside a
+            // clone that redirect can never come back (the real system
+            // hands it to the ORIGINAL app), so answer EMPTY here: the SDK
+            // disables the Custom Tab handler and uses its in-app WebView
+            // dialog instead - the web login form inside the clone.
+            if (isFacebookRedirectQuery(intent)) {
+                diagLog("queryIntentActivities caller=" + BlackBoxCore.getAppPackageName()
+                        + " " + diagIntentSummary(intent)
+                        + " -> [] (FB redirect URI hidden: forces WebView login)");
+                if (BuildCompat.isN()) {
+                    return ParceledListSliceCompat.create(new ArrayList<ResolveInfo>());
+                }
+                return new ArrayList<ResolveInfo>();
+            }
 
             List<ResolveInfo> resolves = BlackBoxCore.getBPackageManager()
                     .queryIntentActivities(intent, flags, type, BActivityThread.getUserId());

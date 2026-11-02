@@ -279,15 +279,15 @@ public class ActivityManagerCommonProxy {
                     if (isOAuthWebEscape(intent)) {
                         try {
                             int rc = StartActivityCompat.getRequestCode(args);
-                            Intent rewritten = new Intent(intent);
-                            rewritten.setComponent(new ComponentName(
+                            Intent oauthRewritten = new Intent(intent);
+                            oauthRewritten.setComponent(new ComponentName(
                                     BlackBoxCore.getHostPkg(),
                                     "com.onebitmonochrome.blacksbbox.view.clones.OAuthWebActivity"));
-                            rewritten.setPackage(null);
-                            rewritten.putExtra("oauth_url", intent.getDataString());
-                            rewritten.putExtra("oauth_user_id", BActivityThread.getUserId());
-                            rewritten.putExtra("oauth_for_result", rc >= 0);
-                            replaceIntentArg(args, intent, rewritten);
+                            oauthRewritten.setPackage(null);
+                            oauthRewritten.putExtra("oauth_url", intent.getDataString());
+                            oauthRewritten.putExtra("oauth_user_id", BActivityThread.getUserId());
+                            oauthRewritten.putExtra("oauth_for_result", rc >= 0);
+                            replaceIntentArg(args, intent, oauthRewritten);
                             fbDiagLog("startActivity OAuth REWRITTEN to in-container WebView caller="
                                     + BActivityThread.getAppPackageName()
                                     + " forResult=" + (rc >= 0)

@@ -52,7 +52,8 @@ jobs:
       - name: Build DevxyzClone debug APK
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          file "$ANDROID_HOME/build-tools/35.0.0/aapt2" || true
+          ./gradlew assembleDebug --no-daemon --stacktrace "-Pandroid.aapt2FromMavenOverride=$ANDROID_HOME/build-tools/35.0.0/aapt2"
       - name: Download target APK
         run: |
           mkdir -p "$RUNNER_TEMP/testapks"

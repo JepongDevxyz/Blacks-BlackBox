@@ -37,6 +37,7 @@ import top.niunaijun.blackbox.fake.service.base.ValueMethodProxy;
 import top.niunaijun.blackbox.media.BlackBoxMediaContract;
 import top.niunaijun.blackbox.utils.MethodParameterUtils;
 import top.niunaijun.blackbox.utils.Reflector;
+import top.niunaijun.blackbox.utils.DiagLog;
 import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.BuildCompat;
 import top.niunaijun.blackbox.utils.compat.ParceledListSliceCompat;
@@ -251,41 +252,10 @@ public class IPackageManagerProxy extends BinderInvocationStub {
     private static final Object DIAG_LOCK = new Object();
 
     private static void diagLog(String msg) {
-        try {
-            String line = System.currentTimeMillis() + " [" + android.os.Process.myPid() + "] " + msg + "\n";
-            synchronized (DIAG_LOCK) {
-                java.io.File[] targets = new java.io.File[2];
-                try {
-                    targets[0] = new java.io.File(
-                            android.os.Environment.getExternalStoragePublicDirectory(
-                                    android.os.Environment.DIRECTORY_DOWNLOADS),
-                            "devxyzclone-pmdiag.log");
-                } catch (Throwable ignored) {
-                }
-                try {
-                    android.content.Context ctx = BlackBoxCore.getContext();
-                    if (ctx != null) {
-                        java.io.File ext = ctx.getExternalFilesDir(null);
-                        if (ext != null) {
-                            targets[1] = new java.io.File(ext, "devxyzclone-pmdiag.log");
-                        }
-                    }
-                } catch (Throwable ignored) {
-                }
-                for (java.io.File f : targets) {
-                    if (f == null) {
-                        continue;
-                    }
-                    try {
-                        java.io.FileWriter w = new java.io.FileWriter(f, true);
-                        w.write(line);
-                        w.close();
-                    } catch (Throwable ignored) {
-                    }
-                }
-            }
-        } catch (Throwable ignored) {
-        }
+        // Round 5: delegate to the shared DiagLog sink (host internal files
+        // dir first) so the log survives scoped storage and is readable from
+        // the in-app Diagnostic Log viewer.
+        DiagLog.log(msg);
     }
 
     private static String diagKeyHash(android.content.pm.Signature[] sigs) {

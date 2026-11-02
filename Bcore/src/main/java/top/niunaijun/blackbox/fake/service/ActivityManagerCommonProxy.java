@@ -25,6 +25,7 @@ import top.niunaijun.blackbox.fake.hook.ProxyMethod;
 import top.niunaijun.blackbox.fake.provider.FileProviderHandler;
 import top.niunaijun.blackbox.utils.ComponentUtils;
 import top.niunaijun.blackbox.utils.MethodParameterUtils;
+import top.niunaijun.blackbox.utils.DiagLog;
 import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.BuildCompat;
 import top.niunaijun.blackbox.utils.compat.StartActivityCompat;
@@ -73,16 +74,8 @@ public class ActivityManagerCommonProxy {
     }
 
     private static void fbDiagLog(String msg) {
-        try {
-            java.io.File f = new java.io.File(
-                    android.os.Environment.getExternalStoragePublicDirectory(
-                            android.os.Environment.DIRECTORY_DOWNLOADS),
-                    "devxyzclone-pmdiag.log");
-            java.io.FileWriter w = new java.io.FileWriter(f, true);
-            w.write(System.currentTimeMillis() + " [" + android.os.Process.myPid() + "] " + msg + "\n");
-            w.close();
-        } catch (Throwable ignored) {
-        }
+        // Round 5: shared DiagLog sink (see IPackageManagerProxy).
+        DiagLog.log(msg);
     }
     private static final String ACTION_SAMSUNG_ACCOUNT_SIGNIN_POPUP = "com.msc.action.samsungaccount.SIGNIN_POPUP";
     private static final String ACTION_SAMSUNG_ACCOUNT_REQUEST_SIGN_IN_FROM_WEB_SDK = "com.samsung.android.samsungaccount.action.REQUEST_SIGN_IN_FROM_WEB_SDK";
@@ -171,6 +164,28 @@ public class ActivityManagerCommonProxy {
             if (webSdkRewritten != null) {
                 replaceIntentArg(args, intent, webSdkRewritten);
                 intent = webSdkRewritten;
+            }
+
+            // Round 5 diagnostics: record every cross-package start and every
+            // ACTION_VIEW escape, so a sign-in flow that leaves the clone
+            // (browser / custom tab / external app) is visible in the log
+            // even when it makes no PackageManager calls at all.
+            try {
+                String callerPkg = BActivityThread.getAppPackageName();
+                String tgtPkg = intent.getPackage();
+                if (tgtPkg == null && intent.getComponent() != null) {
+                    tgtPkg = intent.getComponent().getPackageName();
+                }
+                boolean viewEscape = Intent.ACTION_VIEW.equals(intent.getAction())
+                        && intent.getDataString() != null;
+                if (viewEscape || (tgtPkg != null && callerPkg != null && !tgtPkg.equals(callerPkg))) {
+                    fbDiagLog("startActivity caller=" + callerPkg
+                            + " -> target=" + tgtPkg
+                            + " cmp=" + intent.getComponent()
+                            + " act=" + intent.getAction()
+                            + " data=" + intent.getDataString());
+                }
+            } catch (Throwable ignored) {
             }
 
             ResolveInfo resolveInfo = BlackBoxCore.getBPackageManager().resolveActivity(

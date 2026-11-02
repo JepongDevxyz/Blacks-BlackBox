@@ -151,6 +151,10 @@ class ClonesActivity : BaseActivity() {
                 startActivity(Intent(this, SettingActivity::class.java))
                 true
             }
+            R.id.menu_diag -> {
+                startActivity(Intent(this, DiagLogActivity::class.java))
+                true
+            }
             else -> super.onOptionsItemSelected(item)
         }
     }

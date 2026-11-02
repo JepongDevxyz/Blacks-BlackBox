@@ -60,6 +60,7 @@ import top.niunaijun.blackbox.utils.compat.ActivityManagerCompat;
 import top.niunaijun.blackbox.utils.compat.BuildCompat;
 import top.niunaijun.blackbox.utils.compat.ParceledListSliceCompat;
 import top.niunaijun.blackbox.utils.compat.TaskDescriptionCompat;
+import top.niunaijun.blackbox.utils.DiagLog;
 import top.niunaijun.blackbox.utils.Slog;
 
 import static android.content.Context.RECEIVER_EXPORTED;
@@ -166,6 +167,8 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                                 && !authStr.startsWith(callerPackage)) {
                             Slog.w(TAG, "Blocked Meta provider access from clone: "
                                     + authStr + " caller=" + callerPackage);
+                            DiagLog.log("getContentProvider BLOCKED meta auth=" + authStr
+                                    + " caller=" + callerPackage);
                             return null;
                         }
                     } catch (Throwable ignored) {

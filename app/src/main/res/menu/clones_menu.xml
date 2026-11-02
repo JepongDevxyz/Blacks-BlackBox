@@ -6,4 +6,7 @@
     <item
         android:id="@+id/menu_settings"
         android:title="@string/setting" />
+    <item
+        android:id="@+id/menu_diag"
+        android:title="Diagnostic Log" />
 </menu>

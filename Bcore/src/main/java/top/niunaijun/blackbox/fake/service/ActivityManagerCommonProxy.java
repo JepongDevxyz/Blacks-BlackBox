@@ -38,6 +38,52 @@ public class ActivityManagerCommonProxy {
     private static volatile int sStartIntentNotResolved = START_RESULT_UNRESOLVED;
     private static final String PKG_SAMSUNG_HEALTH = "com.sec.android.app.shealth";
     private static final String PKG_SAMSUNG_ACCOUNT = "com.osp.app.signin";
+    private static final String PKG_FACEBOOK_KATANA = "com.facebook.katana";
+
+    // DevxyzClone fix (round 4): a clone must never launch the REAL Facebook
+    // app. At the real ActivityManager every clone start is attributed to the
+    // host package, so Katana validates the HOST key hash and Facebook login
+    // fails ("Invalid key hash" / "Something went wrong"). PM-level hiding
+    // (rounds 1-2) cannot stop a direct startActivity, so fail the launch
+    // in-process here; the SDK then falls back to its web dialog flow.
+    private static boolean shouldBlockFacebookNativeLaunch(Intent intent) {
+        if (intent == null) {
+            return false;
+        }
+        try {
+            String callerPackage = BActivityThread.getAppPackageName();
+            if (callerPackage == null
+                    || PKG_FACEBOOK_KATANA.equals(callerPackage)
+                    || callerPackage.equals(BlackBoxCore.getHostPkg())) {
+                return false;
+            }
+            if (PKG_FACEBOOK_KATANA.equals(intent.getPackage())) {
+                return true;
+            }
+            ComponentName cn = intent.getComponent();
+            if (cn != null && PKG_FACEBOOK_KATANA.equals(cn.getPackageName())) {
+                return true;
+            }
+            String act = intent.getAction();
+            return act != null && (act.startsWith("com.facebook.katana.")
+                    || act.startsWith("com.facebook.platform."));
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    private static void fbDiagLog(String msg) {
+        try {
+            java.io.File f = new java.io.File(
+                    android.os.Environment.getExternalStoragePublicDirectory(
+                            android.os.Environment.DIRECTORY_DOWNLOADS),
+                    "devxyzclone-pmdiag.log");
+            java.io.FileWriter w = new java.io.FileWriter(f, true);
+            w.write(System.currentTimeMillis() + " [" + android.os.Process.myPid() + "] " + msg + "\n");
+            w.close();
+        } catch (Throwable ignored) {
+        }
+    }
     private static final String ACTION_SAMSUNG_ACCOUNT_SIGNIN_POPUP = "com.msc.action.samsungaccount.SIGNIN_POPUP";
     private static final String ACTION_SAMSUNG_ACCOUNT_REQUEST_SIGN_IN_FROM_WEB_SDK = "com.samsung.android.samsungaccount.action.REQUEST_SIGN_IN_FROM_WEB_SDK";
     private static final String ACTION_SAMSUNG_ACCOUNT_REQUEST_CONFIRM_PASSWORD_FROM_WEB_SDK = "com.samsung.android.samsungaccount.action.REQUEST_CONFIRM_PASSWORD_FROM_WEB_SDK";
@@ -166,6 +212,17 @@ public class ActivityManagerCommonProxy {
                 }
                 if (resolveInfo == null) {
                     intent.setPackage(origPackage);
+
+                    // DevxyzClone fix (round 4): block the fallthrough launch of
+                    // the real Facebook app (see shouldBlockFacebookNativeLaunch).
+                    if (shouldBlockFacebookNativeLaunch(intent)) {
+                        fbDiagLog("startActivity BLOCKED katana launch caller="
+                                + BActivityThread.getAppPackageName()
+                                + " pkg=" + intent.getPackage()
+                                + " cmp=" + intent.getComponent()
+                                + " act=" + intent.getAction());
+                        return getStartIntentNotResolvedCode();
+                    }
 
                     // Default behavior for Samsung Health should not use the phone's Samsung
                     // Account app. If the app attempts the SamsungAccount SIGNIN_POPUP flow and
@@ -831,6 +888,17 @@ public class ActivityManagerCommonProxy {
             IBinder resultTo = (IBinder) args[index++];
             Bundle options = (Bundle) args[index];
             
+            for (Intent fbIntent : intents) {
+                if (shouldBlockFacebookNativeLaunch(fbIntent)) {
+                    fbDiagLog("startActivities BLOCKED katana launch caller="
+                            + BActivityThread.getAppPackageName()
+                            + " pkg=" + fbIntent.getPackage()
+                            + " cmp=" + fbIntent.getComponent()
+                            + " act=" + fbIntent.getAction());
+                    return getStartIntentNotResolvedCode();
+                }
+            }
+
             if (!ComponentUtils.isSelf(intents)) {
                 return method.invoke(who, args);
             }

@@ -151,6 +151,27 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                     return method.invoke(who, args);
                 }
 
+                // DevxyzClone fix (round 4): Meta cross-app providers (Katana /
+                // Messenger / FB Lite SSO + platform providers) must not be
+                // acquirable from inside a clone - their answers are computed
+                // by the real apps against the host identity.
+                String authStr = (String) auth;
+                if (authStr.startsWith("com.facebook.katana")
+                        || authStr.startsWith("com.facebook.orca")
+                        || authStr.startsWith("com.facebook.wakizashi")) {
+                    try {
+                        String callerPackage = BActivityThread.getAppPackageName();
+                        if (callerPackage != null
+                                && !callerPackage.equals(BlackBoxCore.getHostPkg())
+                                && !authStr.startsWith(callerPackage)) {
+                            Slog.w(TAG, "Blocked Meta provider access from clone: "
+                                    + authStr + " caller=" + callerPackage);
+                            return null;
+                        }
+                    } catch (Throwable ignored) {
+                    }
+                }
+
                 if (BuildCompat.isQ()) {
                     args[1] = BlackBoxCore.getHostPkg();
                 }

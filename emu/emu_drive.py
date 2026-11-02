@@ -153,11 +153,33 @@ def tap_node(n):
     time.sleep(1.0)
 
 
+def handle_system_dialogs(nodes):
+    """Dismiss system permission dialogs (log access, runtime perms).
+
+    Only fires when a Button labelled Allow* exists together with a
+    Don't-allow counterpart, so in-app buttons are never hit.
+    """
+    deny = any("don" in n["text"].lower() and "allow" in n["text"].lower()
+               for n in nodes)
+    if not deny:
+        return False
+    for label in ("Allow one-time access", "Allow all the time", "Allow"):
+        n = find(nodes, label)
+        if n is not None and "Button" in n["cls"]:
+            tap_node(n)
+            log("system dialog: tapped %r" % label)
+            return True
+    return False
+
+
 def wait_text(substr, timeout=60, rid=None):
     end = time.time() + timeout
     last = []
     while time.time() < end:
         last = dump()
+        if handle_system_dialogs(last):
+            time.sleep(2)
+            continue
         if find(last, substr, rid=rid):
             return last
         time.sleep(3)
@@ -250,6 +272,9 @@ def main():
             break
     shot("launched")
     nodes = dump("home")
+    if handle_system_dialogs(nodes):
+        time.sleep(3)
+        nodes = dump("home")
     shot("home")
     log("home texts: " + texts(nodes)[:300])
 

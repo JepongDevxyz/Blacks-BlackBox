@@ -29,6 +29,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.niunaijun.blackbox.BlackBoxCore
+import top.niunaijun.blackbox.utils.DiagLog
 import com.onebitmonochrome.blacksbbox.R
 import com.onebitmonochrome.blacksbbox.data.CloneRecord
 import com.onebitmonochrome.blacksbbox.data.CloneRegistry
@@ -225,6 +226,27 @@ class ClonesActivity : BaseActivity() {
                 val pkg = result.packageName ?: source
                 val number = registry.issueNumber(pkg)
                 registry.addRecord(CloneRecord(pkg, userId, number, null))
+                // Round 8: Google services auto-on for every new clone.
+                // Installs the host's own Google packages into this fresh
+                // profile through the engine API (no switch, no download),
+                // so Google-based sign-ins can work inside the clone.
+                setBusy(true)
+                val gmsReady = withContext(Dispatchers.IO) {
+                    try {
+                        val core = BlackBoxCore.get()
+                        if (core.isSupportGms() && !core.isInstallGms(userId)) {
+                            core.installGms(userId)
+                        }
+                        core.isInstallGms(userId)
+                    } catch (e: Exception) {
+                        false
+                    }
+                }
+                setBusy(false)
+                DiagLog.log("gms auto-on: userId=" + userId + " pkg=" + pkg + " ready=" + gmsReady)
+                if (!gmsReady) {
+                    Toast.makeText(this@ClonesActivity, R.string.gms_auto_on_unavailable, Toast.LENGTH_LONG).show()
+                }
                 refresh()
                 toast(R.string.install_success)
             } else {

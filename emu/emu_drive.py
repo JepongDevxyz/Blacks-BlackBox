@@ -204,13 +204,33 @@ def main():
     log("target=%s pkg=%s email=%s" % (TARGET, TARGET_PKG, EMAIL))
     log("clone_apk=%s target_apk=%s" % (CLONE_APK, TARGET_APK))
 
-    r = adb("install", "-r", "-g", CLONE_APK, timeout=300)
+    # The ARM-translated target install is CPU-bound (dexopt). Switch the
+    # install compiler filter to quicken so installs finish in minutes,
+    # and give the target install a long leash.
+    try:
+        adb("root", timeout=30)
+        adb("wait-for-device", timeout=60)
+        for prop in ("pm.dexopt.install", "pm.dexopt.bg-dexopt"):
+            adb("shell", "setprop", prop, "quicken", timeout=20)
+        log("dexopt install filter set to quicken")
+    except Exception as e:
+        log("pre-install setup skipped: %s" % e)
+
+    r = adb("install", "-r", "-g", CLONE_APK, timeout=600)
     log("install clone: " + r.strip().splitlines()[-1] if r.strip() else "install clone: ?")
-    r = adb("install", "-r", "-g", TARGET_APK, timeout=600)
+    r = adb("install", "-r", "-g", TARGET_APK, timeout=1800)
     log("install target: " + r.strip().splitlines()[-1] if r.strip() else "install target: ?")
     if "Success" not in r:
         shot("install_fail")
         finalize("TARGET_INSTALL_FAILED (see report)")
+
+    # Let dexopt/background work drain before touching the UI.
+    time.sleep(60)
+    for _ in range(5):
+        if anr_present():
+            dismiss_anr()
+        else:
+            break
 
     # Launch DevxyzClone's launcher activity.
     launcher = adb("shell", "cmd", "package", "resolve-activity",
@@ -254,7 +274,7 @@ def main():
     tap_node(row)
 
     # Clone installs; wait for the clone row on the home list.
-    nodes = wait_text(TARGET_LABEL, timeout=360)
+    nodes = wait_text(TARGET_LABEL, timeout=900)
     shot("after_clone")
     log("after clone texts: " + texts(nodes)[:300])
     row = find(nodes, TARGET_LABEL)

@@ -192,4 +192,5 @@
     <string name="clone_reset_name">Reset name</string>
     <string name="clone_delete">Delete clone</string>
     <string name="clone_delete_hint">Delete %s? Its data inside DevxyzClone will be wiped.</string>
+    <string name="gms_auto_on_unavailable">Clone created, but Google services are not available for it</string>
 </resources>

@@ -416,12 +416,16 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 return null;
             }
 
-            // Round 7: same redirect-URI hiding as QueryIntentActivities.
+            // DevxyzClone 1.0.10: Round 7 hid these redirect-URI probes
+            // (answered null/empty) and the SDK concluded NO login handler
+            // exists at all - her phone's DiagLog (2026-11-04) shows the FB
+            // attempt dying right after these probes. The probes are now
+            // answered truthfully by the virtual registry below; this log
+            // line records the probe so the next log shows what followed.
             if (isFacebookRedirectQuery(intent)) {
                 diagLog("resolveIntent caller=" + BlackBoxCore.getAppPackageName()
                         + " " + diagIntentSummary(intent)
-                        + " -> null (FB redirect URI hidden: forces WebView login)");
-                return null;
+                        + " (FB redirect probe: passing through to virtual registry)");
             }
 
             String resolvedType = (String) args[1];
@@ -1094,13 +1098,12 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             // disables the Custom Tab handler and uses its in-app WebView
             // dialog instead - the web login form inside the clone.
             if (isFacebookRedirectQuery(intent)) {
+                // DevxyzClone 1.0.10: no longer answered empty (see the
+                // resolveIntent note). Falls through to the virtual query
+                // below, whose result is the truth inside the clone.
                 diagLog("queryIntentActivities caller=" + BlackBoxCore.getAppPackageName()
                         + " " + diagIntentSummary(intent)
-                        + " -> [] (FB redirect URI hidden: forces WebView login)");
-                if (BuildCompat.isN()) {
-                    return ParceledListSliceCompat.create(new ArrayList<ResolveInfo>());
-                }
-                return new ArrayList<ResolveInfo>();
+                        + " (FB redirect probe: passing through to virtual registry)");
             }
 
             List<ResolveInfo> resolves = BlackBoxCore.getBPackageManager()

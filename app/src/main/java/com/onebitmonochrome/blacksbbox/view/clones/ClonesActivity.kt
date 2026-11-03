@@ -224,6 +224,21 @@ class ClonesActivity : BaseActivity() {
             setBusy(false)
             if (result != null && result.success) {
                 val pkg = result.packageName ?: source
+                // DevxyzClone 1.0.10: record HOW this clone was installed and
+                // how many split APKs the engine registered for it. Her phone
+                // runs Play split installs (ML base carries 0 native libs -
+                // all live in the arm64 split), while the lab used single
+                // full APKs; this line settles whether a clone is whole.
+                try {
+                    val infos = BlackBoxCore.get().getInstalledApplications(0, userId)
+                    val mine = infos.firstOrNull { it.packageName == pkg }
+                    val splits = mine?.splitSourceDirs?.size ?: -1
+                    DiagLog.log("clone-install: userId=" + userId + " pkg=" + pkg
+                            + " source=" + source + " splits=" + splits)
+                } catch (e: Exception) {
+                    DiagLog.log("clone-install: userId=" + userId + " pkg=" + pkg
+                            + " source=" + source + " splits=unknown ex=" + e)
+                }
                 val number = registry.issueNumber(pkg)
                 registry.addRecord(CloneRecord(pkg, userId, number, null))
                 // Round 8: Google services auto-on for every new clone.
@@ -235,10 +250,16 @@ class ClonesActivity : BaseActivity() {
                     try {
                         val core = BlackBoxCore.get()
                         if (core.isSupportGms() && !core.isInstallGms(userId)) {
-                            core.installGms(userId)
+                            // DevxyzClone 1.0.10: the InstallResult used to be
+                            // discarded here, so a failed GMS install left no
+                            // trace beyond ready=false. Log it.
+                            val r = core.installGms(userId)
+                            DiagLog.log("gms auto-on install: userId=" + userId
+                                    + " success=" + r.success + " msg=" + r.msg)
                         }
                         core.isInstallGms(userId)
                     } catch (e: Exception) {
+                        DiagLog.log("gms auto-on exception: userId=" + userId + " " + e)
                         false
                     }
                 }

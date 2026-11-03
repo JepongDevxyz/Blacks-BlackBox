@@ -968,6 +968,17 @@ public class IActivityManagerProxy extends ClassInvocationStub {
                     || permission.equals(Manifest.permission.SEND_SMS)) {
                 return PackageManager.PERMISSION_GRANTED;
             }
+
+            // Round 10: INTERNET / network-state are normal permissions the
+            // clone's own manifest already requests and the host holds. Answer
+            // GRANTED deterministically instead of relying on the AMS
+            // fall-through below — the FB SDK's WebView login handler (the
+            // only handler left inside clones) gates on
+            // checkCallingOrSelfPermission(INTERNET) before it will run.
+            if (permission.equals(Manifest.permission.INTERNET)
+                    || permission.equals(Manifest.permission.ACCESS_NETWORK_STATE)) {
+                return PackageManager.PERMISSION_GRANTED;
+            }
             
             
             if (isAudioPermission(permission)) {

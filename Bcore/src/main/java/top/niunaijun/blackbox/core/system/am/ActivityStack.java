@@ -38,6 +38,7 @@ import top.niunaijun.blackbox.proxy.ProxyActivity;
 import top.niunaijun.blackbox.proxy.ProxyManifest;
 import top.niunaijun.blackbox.proxy.record.ProxyActivityRecord;
 import top.niunaijun.blackbox.utils.ComponentUtils;
+import top.niunaijun.blackbox.utils.DiagLog;
 import top.niunaijun.blackbox.utils.IntentSanitizer;
 import top.niunaijun.blackbox.utils.Slog;
 import top.niunaijun.blackbox.utils.compat.ActivityManagerCompat;
@@ -398,6 +399,16 @@ public class ActivityStack {
     ActivityRecord newActivityRecord(Intent intent, ActivityInfo info, IBinder resultTo,
                                      int userId) {
         ActivityRecord targetRecord = ActivityRecord.create(intent, info, resultTo, userId);
+        // Round 10: capture the caller's component NOW, while the launch-time
+        // resultTo token still resolves to the caller's record. Later, when the
+        // launched activity asks getCallingActivity(), the token chain may be
+        // broken (task pruning, missed lookups) — this value cannot be lost.
+        synchronized (mTasks) {
+            ActivityRecord sourceRecord = findActivityRecordByToken(userId, resultTo);
+            if (sourceRecord != null) {
+                targetRecord.callerComponent = sourceRecord.component;
+            }
+        }
         synchronized (mLaunchingActivities) {
             mLaunchingActivities.add(targetRecord);
             Message obtain = Message.obtain(mHandler, LAUNCH_TIME_OUT, targetRecord);
@@ -526,12 +537,22 @@ public class ActivityStack {
 
     public String getCallingPackage(IBinder token, int userId) {
         synchronized (mTasks) {
-            synchronizeTasks();
+            // Round 10: look up BEFORE synchronizeTasks() prunes — pruning
+            // against real-AMS recents can drop the very records this call
+            // needs (the FB SDK's LoginFragment dies on a null answer here).
             ActivityRecord activityRecordByToken = findActivityRecordByToken(userId, token);
+            if (activityRecordByToken == null) {
+                synchronizeTasks();
+                activityRecordByToken = findActivityRecordByToken(userId, token);
+            }
             if (activityRecordByToken != null) {
                 ActivityRecord resultTo = findActivityRecordByToken(userId, activityRecordByToken.resultTo);
                 if (resultTo != null) {
                     return resultTo.info.packageName;
+                }
+                // Round 10: the caller captured at launch time.
+                if (activityRecordByToken.callerComponent != null) {
+                    return activityRecordByToken.callerComponent.getPackageName();
                 }
                 // Privacy: if we can't resolve the "resultTo" link, fall back to the
                 // current virtual activity package rather than leaking the host package.
@@ -547,24 +568,61 @@ public class ActivityStack {
 
     public ComponentName getCallingActivity(IBinder token, int userId) {
         synchronized (mTasks) {
-            synchronizeTasks();
+            // Round 10: look up BEFORE synchronizeTasks() prunes — pruning
+            // against real-AMS recents can drop the very records this call
+            // needs (the FB SDK's LoginFragment finishes instantly, with no
+            // UI and RESULT_CANCELED, when this returns null).
             ActivityRecord activityRecordByToken = findActivityRecordByToken(userId, token);
+            if (activityRecordByToken == null) {
+                synchronizeTasks();
+                activityRecordByToken = findActivityRecordByToken(userId, token);
+            }
             if (activityRecordByToken != null) {
                 ActivityRecord resultTo = findActivityRecordByToken(userId, activityRecordByToken.resultTo);
                 if (resultTo != null) {
                     return resultTo.component;
+                }
+                // Round 10: the caller captured at launch time — immune to
+                // token-lookup misses and task pruning after the launch.
+                if (activityRecordByToken.callerComponent != null) {
+                    DiagLog.log("am getCallingActivity: resultTo miss, callerComponent="
+                            + activityRecordByToken.callerComponent.flattenToShortString());
+                    return activityRecordByToken.callerComponent;
                 }
                 // Privacy: fall back to the current virtual activity (best-effort).
                 if (activityRecordByToken.component != null) {
                     return activityRecordByToken.component;
                 }
             }
+            // Round 10: the record chain is broken entirely — the best
+            // truthful answer left is the top activity of this user's most
+            // recent virtual task (the foreground flow's caller).
+            ActivityRecord top = getTopActivityRecordForUser(userId);
+            if (top != null && top.component != null) {
+                DiagLog.log("am getCallingActivity: record miss, task-top fallback="
+                        + top.component.flattenToShortString());
+                return top.component;
+            }
             String appPkg = BlackBoxCore.getAppPackageName();
             if (appPkg != null) {
                 return new ComponentName(appPkg, ProxyActivity.P0.class.getName());
             }
+            DiagLog.log("am getCallingActivity: NULL (no record, no fallback)");
             return null;
         }
+    }
+
+    private ActivityRecord getTopActivityRecordForUser(int userId) {
+        ActivityRecord top = null;
+        for (TaskRecord next : mTasks.values()) {
+            if (next.userId == userId) {
+                ActivityRecord t = next.getTopActivityRecord();
+                if (t != null) {
+                    top = t;
+                }
+            }
+        }
+        return top;
     }
 
     @SuppressWarnings("deprecation")

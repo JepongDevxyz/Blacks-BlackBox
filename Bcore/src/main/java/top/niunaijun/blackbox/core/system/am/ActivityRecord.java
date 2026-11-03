@@ -14,6 +14,11 @@ public class ActivityRecord extends Binder {
     public TaskRecord task;
     public IBinder token;
     public IBinder resultTo;
+    // Round 10: the caller's component, captured at launch time in
+    // ActivityStack.newActivityRecord while the resultTo token still
+    // resolves. getCallingActivity() answers from this when the token
+    // chain is broken later (pruned tasks, missed lookups).
+    public ComponentName callerComponent;
     public ActivityInfo info;
     public ComponentName component;
     public Intent intent;

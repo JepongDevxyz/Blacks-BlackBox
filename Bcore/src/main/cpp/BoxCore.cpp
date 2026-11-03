@@ -159,6 +159,10 @@ void setDeviceSpoof(JNIEnv *env, jclass clazz,
     if (serial) env->ReleaseStringUTFChars(serial, c_serial);
 }
 
+void clearDeviceSpoof(JNIEnv *env, jclass clazz) {
+    clearDeviceSpoofValues();
+}
+
 static JNINativeMethod gMethods[] = {
         {"disableHiddenApi", "()Z",                               (void *) disableHiddenApi},
         {"disableResourceLoading", "()Z",                         (void *) disableResourceLoading},
@@ -167,6 +171,7 @@ static JNINativeMethod gMethods[] = {
         {"enableIO",   "()V",                                     (void *) enableIO},
         {"init",       "(I)V",                                    (void *) init},
         {"setDeviceSpoof", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V", (void *) setDeviceSpoof},
+        {"clearDeviceSpoof", "()V", (void *) clearDeviceSpoof},
 };
 
 int registerNativeMethods(JNIEnv *env, const char *className,

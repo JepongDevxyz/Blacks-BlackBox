@@ -21,6 +21,11 @@ static std::string g_device = "oriole";
 static std::string g_product = "oriole";
 static std::string g_fingerprint = "google/oriole/oriole:12/SP1A.210812.015/7679548:user/release-keys";
 static std::string g_serial = "1A2B3C4D5E6F";
+// Device spoofing is OPT-IN: the property hook passes every property through
+// untouched until a profile has been explicitly applied via setDeviceSpoofValues
+// (NativeCore.setDeviceSpoof). The compiled-in values above are inert while
+// this flag is false.
+static bool g_spoof_enabled = false;
 
 static int copy_spoofed_value(const std::string &source, char *value) {
     strcpy(value, source.c_str());
@@ -43,32 +48,41 @@ void setDeviceSpoofValues(
     if (product != nullptr) g_product = product;
     if (fingerprint != nullptr) g_fingerprint = fingerprint;
     if (serial != nullptr) g_serial = serial;
+    g_spoof_enabled = true;
     LOGD("[spoof] Updated profile: %s %s", g_manufacturer.c_str(), g_model.c_str());
+}
+
+void clearDeviceSpoofValues() {
+    std::lock_guard<std::mutex> lock(g_spoof_mutex);
+    g_spoof_enabled = false;
+    LOGD("[spoof] Cleared profile: property hook passing through");
 }
 
 
 int my_system_property_get(const char *name, char *value) {
     std::lock_guard<std::mutex> lock(g_spoof_mutex);
-    if (strcmp(name, "ro.product.model") == 0) {
-        return copy_spoofed_value(g_model, value);
-    }
-    if (strcmp(name, "ro.product.brand") == 0) {
-        return copy_spoofed_value(g_brand, value);
-    }
-    if (strcmp(name, "ro.product.manufacturer") == 0) {
-        return copy_spoofed_value(g_manufacturer, value);
-    }
-    if (strcmp(name, "ro.product.device") == 0) {
-        return copy_spoofed_value(g_device, value);
-    }
-    if (strcmp(name, "ro.product.name") == 0) {
-        return copy_spoofed_value(g_product, value);
-    }
-    if (strcmp(name, "ro.build.fingerprint") == 0) {
-        return copy_spoofed_value(g_fingerprint, value);
-    }
-    if (strcmp(name, "ro.serialno") == 0) {
-        return copy_spoofed_value(g_serial, value);
+    if (g_spoof_enabled) {
+        if (strcmp(name, "ro.product.model") == 0) {
+            return copy_spoofed_value(g_model, value);
+        }
+        if (strcmp(name, "ro.product.brand") == 0) {
+            return copy_spoofed_value(g_brand, value);
+        }
+        if (strcmp(name, "ro.product.manufacturer") == 0) {
+            return copy_spoofed_value(g_manufacturer, value);
+        }
+        if (strcmp(name, "ro.product.device") == 0) {
+            return copy_spoofed_value(g_device, value);
+        }
+        if (strcmp(name, "ro.product.name") == 0) {
+            return copy_spoofed_value(g_product, value);
+        }
+        if (strcmp(name, "ro.build.fingerprint") == 0) {
+            return copy_spoofed_value(g_fingerprint, value);
+        }
+        if (strcmp(name, "ro.serialno") == 0) {
+            return copy_spoofed_value(g_serial, value);
+        }
     }
     if (orig_system_property_get) {
         return orig_system_property_get(name, value);

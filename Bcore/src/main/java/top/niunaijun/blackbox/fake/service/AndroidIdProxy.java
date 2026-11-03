@@ -34,12 +34,12 @@ public class AndroidIdProxy extends ClassInvocationStub {
     public static class GetAndroidId extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            try {
-                return DeviceSpoofManager.getAndroidIdForCurrentUser();
-            } catch (Exception e) {
-                Slog.w(TAG, "AndroidId: GetAndroidId error, returning spoofed ID", e);
-                return DeviceSpoofManager.getAndroidIdForCurrentUser();
+            String spoofedId = DeviceSpoofManager.getAndroidIdForCurrentUser();
+            if (spoofedId != null) {
+                return spoofedId;
             }
+            // Spoofing not enabled: fall through to the real implementation.
+            return method.invoke(who, args);
         }
     }
 
@@ -56,13 +56,20 @@ public class AndroidIdProxy extends ClassInvocationStub {
                     String key = (String) args[0];
                     if (key.contains("android_id") || key.contains("ANDROID_ID") || 
                         key.contains("secure_id") || key.contains("device_id")) {
-                        return DeviceSpoofManager.getAndroidIdForCurrentUser();
+                        String spoofedId = DeviceSpoofManager.getAndroidIdForCurrentUser();
+                        if (spoofedId != null) {
+                            return spoofedId;
+                        }
                     }
                 }
                 return result;
             } catch (Exception e) {
-                Slog.w(TAG, "AndroidId: GetString error, returning spoofed ID", e);
-                return DeviceSpoofManager.getAndroidIdForCurrentUser();
+                String spoofedId = DeviceSpoofManager.getAndroidIdForCurrentUser();
+                if (spoofedId != null) {
+                    Slog.w(TAG, "AndroidId: GetString error, returning spoofed ID", e);
+                    return spoofedId;
+                }
+                throw e;
             }
         }
     }
@@ -80,13 +87,20 @@ public class AndroidIdProxy extends ClassInvocationStub {
                     String key = (String) args[0];
                     if (key.contains("android_id") || key.contains("ANDROID_ID") || 
                         key.contains("secure_id") || key.contains("device_id")) {
-                        return generateMockAndroidIdLong();
+                        Long spoofedId = generateMockAndroidIdLong();
+                        if (spoofedId != null) {
+                            return spoofedId;
+                        }
                     }
                 }
                 return result;
             } catch (Exception e) {
-                Slog.w(TAG, "AndroidId: GetLong error, returning spoofed long ID", e);
-                return generateMockAndroidIdLong();
+                Long spoofedId = generateMockAndroidIdLong();
+                if (spoofedId != null) {
+                    Slog.w(TAG, "AndroidId: GetLong error, returning spoofed long ID", e);
+                    return spoofedId;
+                }
+                throw e;
             }
         }
     }
@@ -104,13 +118,20 @@ public class AndroidIdProxy extends ClassInvocationStub {
                     String key = (String) args[0];
                     if (key.contains("android_id") || key.contains("ANDROID_ID") || 
                         key.contains("secure_id") || key.contains("device_id")) {
-                        return DeviceSpoofManager.getAndroidIdForCurrentUser();
+                        String spoofedId = DeviceSpoofManager.getAndroidIdForCurrentUser();
+                        if (spoofedId != null) {
+                            return spoofedId;
+                        }
                     }
                 }
                 return result;
             } catch (Exception e) {
-                Slog.w(TAG, "AndroidId: Get error, returning spoofed ID", e);
-                return DeviceSpoofManager.getAndroidIdForCurrentUser();
+                String spoofedId = DeviceSpoofManager.getAndroidIdForCurrentUser();
+                if (spoofedId != null) {
+                    Slog.w(TAG, "AndroidId: Get error, returning spoofed ID", e);
+                    return spoofedId;
+                }
+                throw e;
             }
         }
     }
@@ -128,13 +149,20 @@ public class AndroidIdProxy extends ClassInvocationStub {
                     String key = (String) args[0];
                     if (key.contains("android_id") || key.contains("ANDROID_ID") || 
                         key.contains("secure_id") || key.contains("device_id")) {
-                        return DeviceSpoofManager.getAndroidIdForCurrentUser();
+                        String spoofedId = DeviceSpoofManager.getAndroidIdForCurrentUser();
+                        if (spoofedId != null) {
+                            return spoofedId;
+                        }
                     }
                 }
                 return result;
             } catch (Exception e) {
-                Slog.w(TAG, "AndroidId: Read error, returning spoofed ID", e);
-                return DeviceSpoofManager.getAndroidIdForCurrentUser();
+                String spoofedId = DeviceSpoofManager.getAndroidIdForCurrentUser();
+                if (spoofedId != null) {
+                    Slog.w(TAG, "AndroidId: Read error, returning spoofed ID", e);
+                    return spoofedId;
+                }
+                throw e;
             }
         }
     }
@@ -152,7 +180,12 @@ public class AndroidIdProxy extends ClassInvocationStub {
     }
 
     private static Long generateMockAndroidIdLong() {
-        long mockId = Long.parseUnsignedLong(DeviceSpoofManager.getAndroidIdForCurrentUser(), 16);
+        String androidId = DeviceSpoofManager.getAndroidIdForCurrentUser();
+        if (androidId == null) {
+            // Spoofing not enabled: caller must fall through to the real value.
+            return null;
+        }
+        long mockId = Long.parseUnsignedLong(androidId, 16);
         Slog.d(TAG, "AndroidId: Generated mock Android ID long: " + mockId);
         return mockId;
     }

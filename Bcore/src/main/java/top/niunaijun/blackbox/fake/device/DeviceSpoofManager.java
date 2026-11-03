@@ -34,6 +34,24 @@ public final class DeviceSpoofManager {
                 .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE | Context.MODE_MULTI_PROCESS);
     }
 
+    /**
+     * Device spoofing is OPT-IN: it is active for a userId only when the user has
+     * explicitly saved a device profile for that userId (see {@link #saveUserProfile},
+     * which writes every profile key in a single commit). With no saved profile,
+     * clones present the REAL device identity.
+     */
+    public static boolean hasSavedProfile(int userId) {
+        try {
+            return prefs().contains(KEY_MANUFACTURER + userId);
+        } catch (Throwable e) {
+            return false;
+        }
+    }
+
+    public static boolean isSpoofEnabled(int userId) {
+        return hasSavedProfile(userId);
+    }
+
     public static DeviceSpoofProfile getProfile(int userId) {
         DeviceSpoofProfile defaults = getDefaultProfile(userId);
         SharedPreferences prefs = prefs();
@@ -100,9 +118,18 @@ public final class DeviceSpoofManager {
                 .remove(KEY_SERIAL + userId)
                 .remove(KEY_ANDROID_ID + userId)
                 .commit();
+        try {
+            NativeCore.clearDeviceSpoof();
+        } catch (Throwable ignored) {
+        }
     }
 
     public static void applyToCurrentProcess(int userId) {
+        if (!hasSavedProfile(userId)) {
+            Slog.d(TAG, "Device spoof not enabled for user " + userId
+                    + " (no saved profile); presenting real device identity");
+            return;
+        }
         try {
             DeviceSpoofProfile profile = getProfile(userId);
             DeviceBuildSpoofer.apply(profile);
@@ -127,6 +154,11 @@ public final class DeviceSpoofManager {
             userId = BActivityThread.getUserId();
         } catch (Throwable e) {
             userId = 0;
+        }
+        if (!hasSavedProfile(userId)) {
+            // Spoofing is opt-in: no saved profile -> callers must fall through
+            // to the real provider value.
+            return null;
         }
         return getProfile(userId).androidId;
     }

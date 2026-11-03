@@ -8,3 +8,5 @@ void setDeviceSpoofValues(
         const char *product,
         const char *fingerprint,
         const char *serial);
+
+void clearDeviceSpoofValues();

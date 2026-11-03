@@ -134,7 +134,9 @@ class BlackBoxLoader {
                                         userId: Int
                                 ) {
                                     try {
-                                        DeviceSpoofManager.applyToCurrentProcess(userId)
+                                        if (DeviceSpoofManager.hasSavedProfile(userId)) {
+                                            DeviceSpoofManager.applyToCurrentProcess(userId)
+                                        }
                                         Log.d(
                                                 TAG,
                                                 "beforeCreateApplication: pkg $packageName, processName $processName,userID:${BActivityThread.getUserId()}"

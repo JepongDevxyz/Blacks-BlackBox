@@ -48,6 +48,7 @@ import top.niunaijun.blackbox.entity.pm.InstalledPackage;
 import top.niunaijun.blackbox.utils.AbiUtils;
 import top.niunaijun.blackbox.utils.BzFileUtils;
 import top.niunaijun.blackbox.utils.Slog;
+import top.niunaijun.blackbox.utils.DiagLog;
 import top.niunaijun.blackbox.utils.compat.PackageParserCompat;
 
 
@@ -814,6 +815,10 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
             onPackageInstalled(bPackageSettings.pkg.packageName, userId);
             return result;
         } catch (Throwable t) {
+            // DevxyzClone 1.0.10: this catch used to swallow the real error
+            // and return a default (success=true) InstallResult, hiding why
+            // an install silently did not register. Name it in DiagLog.
+            DiagLog.log("bpms-install exception file=" + file + " : " + t);
             t.printStackTrace();
         } finally {
             if (stagedFile != null && option.isFlag(InstallOption.FLAG_URI_FILE)) {

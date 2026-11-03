@@ -10,8 +10,8 @@ ext {
     targetSdkVersion = 28 
 
     minSdk = 21
-    versionCode = 471
-    versionName = "1.0.9"
+    versionCode = 472
+    versionName = "1.0.10"
     xVersion = '1.1.0'
     hiddenApiBypass = '4.3'
 }

@@ -9,6 +9,7 @@ import java.util.Set;
 
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.entity.pm.InstallResult;
+import top.niunaijun.blackbox.utils.DiagLog;
 
 
 public class GmsCore {
@@ -50,23 +51,49 @@ public class GmsCore {
     }
 
     private static InstallResult installPackages(Set<String> list, int userId) {
+        // DevxyzClone 1.0.10: per-package diagnostics + continue-on-error.
+        // The old design returned on the FIRST failure and installGApps then
+        // rolled back (uninstalled) every package that HAD installed, so one
+        // dead legacy package silently killed all of Google services and the
+        // only trace was "ready=false". Now every attempt is written to
+        // DiagLog with its real error, and the rest still install.
         BlackBoxCore blackBoxCore = BlackBoxCore.get();
+        StringBuilder failures = new StringBuilder();
         for (String packageName : list) {
-            if (blackBoxCore.isInstalled(packageName, userId)) {
-                continue;
+            try {
+                if (blackBoxCore.isInstalled(packageName, userId)) {
+                    DiagLog.log("gms-install skip pkg=" + packageName + " reason=already-installed");
+                    continue;
+                }
+            } catch (Throwable t) {
+                DiagLog.log("gms-install isInstalled-check exception pkg=" + packageName + " : " + t);
             }
             try {
                 BlackBoxCore.getContext().getPackageManager().getApplicationInfo(packageName, 0);
-            } catch (PackageManager.NameNotFoundException e) {
-                
+            } catch (Throwable e) {
+                DiagLog.log("gms-install skip pkg=" + packageName + " reason=not-on-host");
                 continue;
             }
-            InstallResult installResult = blackBoxCore.installPackageAsUser(packageName, userId);
+            InstallResult installResult;
+            try {
+                installResult = blackBoxCore.installPackageAsUser(packageName, userId);
+            } catch (Throwable t) {
+                DiagLog.log("gms-install pkg=" + packageName + " exception=" + t);
+                if (failures.length() > 0) failures.append("; ");
+                failures.append(packageName).append(" threw ").append(t);
+                continue;
+            }
+            DiagLog.log("gms-install pkg=" + packageName + " success=" + installResult.success
+                    + " msg=" + installResult.msg);
             if (!installResult.success) {
-                return installResult;
+                if (failures.length() > 0) failures.append("; ");
+                failures.append(packageName).append(": ").append(installResult.msg);
             }
         }
-        return new InstallResult();
+        if (failures.length() == 0) {
+            return new InstallResult();
+        }
+        return new InstallResult().installError(failures.toString());
     }
 
     private static void uninstallPackages(Set<String> list, int userId) {
@@ -82,11 +109,24 @@ public class GmsCore {
         googleApps.addAll(GOOGLE_SERVICE);
         googleApps.addAll(GOOGLE_APP);
 
-        InstallResult installResult = installPackages(googleApps, userId);
-        if (!installResult.success) {
-            uninstallGApps(userId);
-            return installResult;
+        // DevxyzClone 1.0.10: host split info for the two big Google packages
+        // (evidence for whether clones see the host's split APKs), and NO
+        // rollback on partial failure anymore.
+        for (String probe : new String[]{GMS_PKG, VENDING_PKG}) {
+            try {
+                android.content.pm.ApplicationInfo ai = BlackBoxCore.getContext()
+                        .getPackageManager().getApplicationInfo(probe, 0);
+                int splits = ai.splitSourceDirs != null ? ai.splitSourceDirs.length : 0;
+                DiagLog.log("gms-install hostinfo pkg=" + probe + " splits=" + splits
+                        + " src=" + ai.sourceDir);
+            } catch (Throwable t) {
+                DiagLog.log("gms-install hostinfo pkg=" + probe + " exception=" + t);
+            }
         }
+        InstallResult installResult = installPackages(googleApps, userId);
+        DiagLog.log("gms-install done userId=" + userId + " success=" + installResult.success
+                + " msg=" + installResult.msg
+                + " gmsInstalled=" + isInstalledGoogleService(userId));
         return installResult;
     }
 

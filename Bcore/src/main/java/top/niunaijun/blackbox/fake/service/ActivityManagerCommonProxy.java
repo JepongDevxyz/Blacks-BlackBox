@@ -233,6 +233,37 @@ public class ActivityManagerCommonProxy {
             } catch (Throwable ignored) {
             }
 
+            // DevxyzClone fix (round 10 / 1.0.14): run the round-6 OAuth
+            // rewrite BEFORE virtual resolution. Previously this check sat
+            // inside the double-resolution-failure branch below, so it only
+            // fired when nothing in the clone resolved the intent. Since GMS
+            // auto-on installs com.google.android.setupwizard into every
+            // clone, its WebDialogActivity resolves generic https VIEW
+            // intents (including the Facebook OAuth URL) and the rewrite was
+            // never reached - the OAuth page launched inside SetupWizard and
+            // black-screened. Checking first keeps the OAuth flow on the
+            // host OAuthWebActivity regardless of what GMS installs.
+            if (isOAuthWebEscape(intent)) {
+                try {
+                    int rc = StartActivityCompat.getRequestCode(args);
+                    Intent oauthRewritten = new Intent(intent);
+                    oauthRewritten.setComponent(new ComponentName(
+                            BlackBoxCore.getHostPkg(),
+                            "com.onebitmonochrome.blacksbbox.view.clones.OAuthWebActivity"));
+                    oauthRewritten.setPackage(null);
+                    oauthRewritten.putExtra("oauth_url", intent.getDataString());
+                    oauthRewritten.putExtra("oauth_user_id", BActivityThread.getUserId());
+                    oauthRewritten.putExtra("oauth_for_result", rc >= 0);
+                    replaceIntentArg(args, intent, oauthRewritten);
+                    fbDiagLog("startActivity OAuth REWRITTEN to in-container WebView preResolve=true caller="
+                            + BActivityThread.getAppPackageName()
+                            + " forResult=" + (rc >= 0)
+                            + " url=" + intent.getDataString());
+                    return method.invoke(who, args);
+                } catch (Throwable ignored) {
+                }
+            }
+
             ResolveInfo resolveInfo = BlackBoxCore.getBPackageManager().resolveActivity(
                     intent,
                     GET_META_DATA,
@@ -273,29 +304,8 @@ public class ActivityManagerCommonProxy {
                 if (resolveInfo == null) {
                     intent.setPackage(origPackage);
 
-                    // DevxyzClone fix (round 6): rewrite Facebook/Meta OAuth
-                    // launches to the host's in-container OAuthWebActivity,
-                    // preserving the for-result linkage (see isOAuthWebEscape).
-                    if (isOAuthWebEscape(intent)) {
-                        try {
-                            int rc = StartActivityCompat.getRequestCode(args);
-                            Intent oauthRewritten = new Intent(intent);
-                            oauthRewritten.setComponent(new ComponentName(
-                                    BlackBoxCore.getHostPkg(),
-                                    "com.onebitmonochrome.blacksbbox.view.clones.OAuthWebActivity"));
-                            oauthRewritten.setPackage(null);
-                            oauthRewritten.putExtra("oauth_url", intent.getDataString());
-                            oauthRewritten.putExtra("oauth_user_id", BActivityThread.getUserId());
-                            oauthRewritten.putExtra("oauth_for_result", rc >= 0);
-                            replaceIntentArg(args, intent, oauthRewritten);
-                            fbDiagLog("startActivity OAuth REWRITTEN to in-container WebView caller="
-                                    + BActivityThread.getAppPackageName()
-                                    + " forResult=" + (rc >= 0)
-                                    + " url=" + intent.getDataString());
-                            return method.invoke(who, args);
-                        } catch (Throwable ignored) {
-                        }
-                    }
+                    // (The round-6 OAuth rewrite moved to before virtual
+                    // resolution in round 10 / 1.0.14 - see above.)
 
                     // DevxyzClone fix (round 4): block the fallthrough launch of
                     // the real Facebook app (see shouldBlockFacebookNativeLaunch).
@@ -331,6 +341,24 @@ public class ActivityManagerCommonProxy {
                 }
             }
 
+
+            // Round 10 / 1.0.14 diagnostics: name the winner whenever an
+            // http(s) VIEW intent resolves to a different package than the
+            // caller's, so "which activity ate my link" is answerable from
+            // the DiagLog without another study round.
+            try {
+                if (Intent.ACTION_VIEW.equals(intent.getAction()) && intent.getData() != null) {
+                    String scheme = intent.getData().getScheme();
+                    if (("http".equals(scheme) || "https".equals(scheme))
+                            && !resolveInfo.activityInfo.packageName.equals(BActivityThread.getAppPackageName())) {
+                        fbDiagLog("startActivity VIEW resolved caller=" + BActivityThread.getAppPackageName()
+                                + " -> " + resolveInfo.activityInfo.packageName
+                                + "/" + resolveInfo.activityInfo.name
+                                + " data=" + intent.getData().getHost() + intent.getData().getPath());
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
 
             intent.setExtrasClassLoader(who.getClass().getClassLoader());
             intent.setComponent(new ComponentName(resolveInfo.activityInfo.packageName, resolveInfo.activityInfo.name));

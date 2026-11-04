@@ -784,6 +784,26 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
             if (aPackage == null) {
                 return result.installError("parser apk error.");
             }
+            // DevxyzClone 1.0.12: the parser can return a bogus package
+            // identity for split-delivered system apps - on real devices
+            // (Pixel 5 / Android 14, Pixel 10 / Android 16) parsing the GMS
+            // base.apk yields a Dynamite split name
+            // (com.google.android.gms.dynamite_cronetdynamite) instead of
+            // the real package name, and every downstream step (the
+            // FLAG_SYSTEM swap below, getPackageLPw, scanPackage) then
+            // queries/registers the WRONG name, so GMS never registers
+            // under its real name. packageArchiveInfo was read by the real
+            // PackageManager above and carries the true name - trust it
+            // over the parser whenever they disagree, and log the pair so
+            // the device log proves what the parser produced.
+            if (packageArchiveInfo.packageName != null
+                    && !packageArchiveInfo.packageName.equals(aPackage.packageName)) {
+                DiagLog.log("bpms-install parsed-name mismatch file=" + apkFile.getName()
+                        + " parsed=" + aPackage.packageName
+                        + " archive=" + packageArchiveInfo.packageName
+                        + " : using archive name");
+                aPackage.packageName = packageArchiveInfo.packageName;
+            }
             result.packageName = aPackage.packageName;
 
             if (selectedSplits != null && !selectedSplits.isEmpty()) {
@@ -804,7 +824,22 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
             }
 
             if (option.isFlag(InstallOption.FLAG_SYSTEM)) {
-                aPackage.applicationInfo = BlackBoxCore.getPackageManager().getPackageInfo(aPackage.packageName, 0).applicationInfo;
+                // DevxyzClone 1.0.12: import the host's real ApplicationInfo
+                // (its splitSourceDirs point at the host's split APKs - the
+                // guest classloader loads them from there, see
+                // BActivityThread). Use getApplicationInfo: it is the exact
+                // call already proven to succeed for GMS on real devices
+                // (the GmsCore hostinfo probe read 12 splits with it), and
+                // guard it - a swap failure must never again kill the whole
+                // install; the parsed ApplicationInfo stays as fallback and
+                // the failure is logged with its stack.
+                try {
+                    aPackage.applicationInfo = BlackBoxCore.getPackageManager().getApplicationInfo(aPackage.packageName, 0);
+                } catch (Throwable swapError) {
+                    DiagLog.log("bpms-install system-swap failed pkg=" + aPackage.packageName
+                            + " : " + stackTraceOf(swapError)
+                            + " (keeping parsed applicationInfo)");
+                }
             }
             BPackageSettings bPackageSettings = mSettings.getPackageLPw(aPackage.packageName, aPackage, option);
 

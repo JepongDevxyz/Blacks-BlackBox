@@ -681,6 +681,16 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
         }
     }
 
+    // DevxyzClone 1.0.11: compact stack trace for DiagLog lines (the log
+    // view is line-based; keep the throwable + its frames in one entry,
+    // capped so one failure cannot flood the log).
+    private static String stackTraceOf(Throwable t) {
+        java.io.StringWriter sw = new java.io.StringWriter();
+        t.printStackTrace(new java.io.PrintWriter(sw));
+        String s = sw.toString().replace('\n', ' ').replace('\r', ' ');
+        return s.length() > 3000 ? s.substring(0, 3000) : s;
+    }
+
     private InstallResult installPackageAsUserLocked(String file, InstallOption option, int userId) {
         long l = System.currentTimeMillis();
         InstallResult result = new InstallResult();
@@ -801,7 +811,31 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
             
             BProcessManagerService.get().killPackageAsUser(aPackage.packageName, userId);
 
-            int i = BPackageInstallerService.get().installPackageAsUser(bPackageSettings, userId);
+            // DevxyzClone 1.0.11: the installer step used to be able to kill
+            // the WHOLE registration with one exception - installing GMS
+            // (FLAG_SYSTEM) throws NameNotFoundException for its Dynamite
+            // module (com.google.android.gms.dynamite_cronetdynamite, a
+            // split-module name, not a real package), so GMS never reached
+            // setInstalled() below and isInstalled(GMS) stayed false forever
+            // while the caller still saw success. For FLAG_SYSTEM installs
+            // the files already live on the host (nothing to copy), so a
+            // failure inside the installer step must NOT abort registration:
+            // log it with a stack trace and continue. For other installs the
+            // failure is real - report it honestly.
+            int i;
+            try {
+                i = BPackageInstallerService.get().installPackageAsUser(bPackageSettings, userId);
+            } catch (Throwable installerError) {
+                DiagLog.log("bpms-install installer exception pkg=" + aPackage.packageName
+                        + " : " + stackTraceOf(installerError));
+                if (option.isFlag(InstallOption.FLAG_SYSTEM)) {
+                    DiagLog.log("bpms-install: continuing registration for system pkg="
+                            + aPackage.packageName);
+                    i = 0;
+                } else {
+                    return result.installError("installer exception: " + installerError);
+                }
+            }
             if (i < 0) {
                 return result.installError("install apk error.");
             }
@@ -809,17 +843,28 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
                 bPackageSettings.setInstalled(true, userId);
                 bPackageSettings.save();
             }
-            mComponentResolver.removeAllComponents(bPackageSettings.pkg);
-            mComponentResolver.addAllComponents(bPackageSettings.pkg);
-            mSettings.scanPackage(aPackage.packageName);
-            onPackageInstalled(bPackageSettings.pkg.packageName, userId);
+            // Component registration is guarded too: a failure resolving one
+            // component/module must not unregister a package whose settings
+            // are already saved above. It is logged loudly instead.
+            try {
+                mComponentResolver.removeAllComponents(bPackageSettings.pkg);
+                mComponentResolver.addAllComponents(bPackageSettings.pkg);
+                mSettings.scanPackage(aPackage.packageName);
+                onPackageInstalled(bPackageSettings.pkg.packageName, userId);
+            } catch (Throwable registrationError) {
+                DiagLog.log("bpms-install registration exception pkg=" + aPackage.packageName
+                        + " : " + stackTraceOf(registrationError));
+            }
             return result;
         } catch (Throwable t) {
-            // DevxyzClone 1.0.10: this catch used to swallow the real error
-            // and return a default (success=true) InstallResult, hiding why
-            // an install silently did not register. Name it in DiagLog.
-            DiagLog.log("bpms-install exception file=" + file + " : " + t);
+            // DevxyzClone 1.0.11: log the FULL stack trace and turn the
+            // result into an honest failure (delivered by the return after
+            // the finally block). 1.0.10 logged only the message and still
+            // returned a default success=true InstallResult - the lie that
+            // hid the GMS registration failure for two rounds.
+            DiagLog.log("bpms-install exception file=" + file + " : " + stackTraceOf(t));
             t.printStackTrace();
+            result = result.installError("install exception: " + t);
         } finally {
             if (stagedFile != null && option.isFlag(InstallOption.FLAG_URI_FILE)) {
                 BzFileUtils.deleteDir(stagedFile);

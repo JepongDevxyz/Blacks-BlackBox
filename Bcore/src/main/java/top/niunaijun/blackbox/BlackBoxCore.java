@@ -1147,7 +1147,7 @@ public class BlackBoxCore extends ClientConfiguration {
             }
             
             PackageInfo packageInfo = getPackageManager().getPackageInfo(packageName, 0);
-            return getBPackageManager().installPackageAsUser(packageInfo.applicationInfo.sourceDir, InstallOption.installBySystem(), userId);
+            return getBPackageManager().installPackageAsUser(packageInfo.applicationInfo.sourceDir, InstallOption.installBySystem().withPackageName(packageName), userId);
         } catch (PackageManager.NameNotFoundException e) {
             e.printStackTrace();
             return new InstallResult().installError(e.getMessage());

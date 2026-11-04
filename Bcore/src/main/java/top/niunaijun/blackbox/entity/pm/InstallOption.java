@@ -12,6 +12,17 @@ public class InstallOption implements Parcelable {
 
     public int flags = 0;
 
+    // DevxyzClone 1.0.13: the package name the caller asked to install,
+    // resolved by name through the real PackageManager on the client
+    // side (BlackBoxCore.installPackageAsUser(String)). Null for every
+    // install path that does not know a name (file/uri installs).
+    public String packageName;
+
+    public InstallOption withPackageName(String packageName) {
+        this.packageName = packageName;
+        return this;
+    }
+
     public static InstallOption installBySystem() {
         InstallOption installOption = new InstallOption();
         installOption.flags = installOption.flags | FLAG_SYSTEM;
@@ -43,6 +54,7 @@ public class InstallOption implements Parcelable {
     @Override
     public void writeToParcel(Parcel dest, int flags) {
         dest.writeInt(this.flags);
+        dest.writeString(this.packageName);
     }
 
     public InstallOption() {
@@ -50,6 +62,7 @@ public class InstallOption implements Parcelable {
 
     protected InstallOption(Parcel in) {
         this.flags = in.readInt();
+        this.packageName = in.readString();
     }
 
     public static final Parcelable.Creator<InstallOption> CREATOR = new Parcelable.Creator<InstallOption>() {

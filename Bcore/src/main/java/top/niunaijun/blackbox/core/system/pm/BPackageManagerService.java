@@ -804,6 +804,38 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
                         + " : using archive name");
                 aPackage.packageName = packageArchiveInfo.packageName;
             }
+            // DevxyzClone 1.0.13: the 1.0.12 Kobiton run proved that for
+            // GMS, BOTH in-server name reads (the real PM's archive info
+            // above and the vendored parser) can agree on the same WRONG
+            // identity - a Dynamite split name - so no in-server source
+            // can correct the parsed name. The one source proven true on
+            // real devices is the caller's own request:
+            // BlackBoxCore.installPackageAsUser(String) resolved the
+            // package BY NAME through the real PM before calling us, and
+            // threads that name through InstallOption. When a requested
+            // name is present on a FLAG_SYSTEM install, log the full
+            // identity picture and FORCE the requested name:
+            // registration keys, the FLAG_SYSTEM swap below and
+            // scanPackage all follow aPackage.packageName, and the
+            // parsed ApplicationInfo must carry the same name.
+            String requestedName = option.packageName;
+            if (option.isFlag(InstallOption.FLAG_SYSTEM) && requestedName != null) {
+                DiagLog.log("bpms-install identity file=" + apkFile.getName()
+                        + " parsed=" + aPackage.packageName
+                        + " archive=" + packageArchiveInfo.packageName
+                        + " requested=" + requestedName);
+                if (!requestedName.equals(aPackage.packageName)) {
+                    DiagLog.log("bpms-install identity forced file=" + apkFile.getName()
+                            + " parsed=" + aPackage.packageName
+                            + " requested=" + requestedName
+                            + " : using requested name");
+                    aPackage.packageName = requestedName;
+                }
+                if (aPackage.applicationInfo != null
+                        && !aPackage.packageName.equals(aPackage.applicationInfo.packageName)) {
+                    aPackage.applicationInfo.packageName = aPackage.packageName;
+                }
+            }
             result.packageName = aPackage.packageName;
 
             if (selectedSplits != null && !selectedSplits.isEmpty()) {
